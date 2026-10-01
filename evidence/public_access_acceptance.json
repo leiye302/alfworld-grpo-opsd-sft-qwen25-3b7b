@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "anonymous_clone": true,
+  "real_download_helper_used": true,
+  "github_tokens_unset": true,
+  "authorization_header_sent": false,
+  "downloaded_bytes": 464239048,
+  "sha256": "73b2d385bf930a75eb7d7d2ee27764088e00c3506262b7f0a63505f9b64520a2",
+  "sha256_matches": true,
+  "elapsed_s": 42.6,
+  "request_header_names": [
+    [
+      "accept",
+      "user-agent"
+    ]
+  ],
+  "target_GPU_training_tested": false
+}

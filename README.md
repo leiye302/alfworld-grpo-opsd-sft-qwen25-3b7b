@@ -73,6 +73,8 @@ python scripts/handoff.py check --work /data/alfwork --gpu
 
 本仓库发布时的实际检查和限制记录在[evidence/handoff_acceptance.json](evidence/handoff_acceptance.json)。维护者的CPU数据/配置检查**不等于对方8×A100上已经完成3B/7B训练**；目标机器GPU检查通过后才开训。
 
+2026-10-01公开后已在禁用GitHub凭据的独立目录完成新克隆，并用实际下载工具匿名取得完整464MB Release、校验SHA-256一致，见[evidence/public_access_acceptance.json](evidence/public_access_acceptance.json)。这验证了无需GitHub授权的代码和资产入口，不代替目标机器的环境安装、两个基模下载或GPU检查。
+
 ## 5. 启动两个SFT方法组，各150轮
 
 ```bash
