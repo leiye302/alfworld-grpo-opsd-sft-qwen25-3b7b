@@ -1,0 +1,15 @@
+.venv/
+work/
+*.partial
+__pycache__/
+*.pyc
+.env
+.netrc
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+checkpoints/
+cache/
+logs/
+*.tar.gz
