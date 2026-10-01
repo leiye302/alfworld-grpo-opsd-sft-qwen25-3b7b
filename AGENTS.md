@@ -1,8 +1,8 @@
 # Handoff contract
 
-Read README.md and docs/METHOD.md before working. The authorized task is the four fresh Qwen2.5-3B/7B experiments, original SDAR GRPO+OPSD baseline and expert full-trajectory SFT, each to150 outer iterations, one node8×A10080GB.
+Read README.md and docs/METHOD.md before working. The authorized task is two fresh Qwen2.5-3B/7B expert full-trajectory SFT method experiments, each to150 outer iterations, one node8×A10080GB. Run only3b_sft then7b_sft. Baseline source/configurations remain for recipe verification; do not launch baseline experiments for this handoff.
 
-Use scripts/bootstrap.sh and scripts/handoff.py prepare/check/run-all. Only obtain the locked Release asset and the two locked Qwen model repositories. Do not download unrelated source-server files, an Analyzer, a72B model, or old checkpoints. Do not request or publish source-server credentials. Private GitHub access must use the recipient's own authorized account.
+Use scripts/bootstrap.sh and scripts/handoff.py prepare/check/run-all. The default run-all/plan queue contains only3b_sft and7b_sft; resume uses the same two-run queue. Only obtain the locked Release asset and the two locked Qwen model repositories. Do not download unrelated source-server files, an Analyzer, a72B model, or old checkpoints. Do not request or publish source-server credentials. Keep this repository private; access must use the recipient's own authorized GitHub account after accepting the collaborator invitation.
 
 Do not modify the objective, coefficient schedule, optimizer placement, masks, global mini-batch, rollout count, fixed validation manifest, normalization, rewards or evaluation protocol. Preserve the original SDAR OPSD code; the signed-gap alteration and complementary OPSD-growth experiment are out of scope. The method alone adds16 global trajectory draws per active round, token-mean reasoning/action CE, initial0.1cosine to0 at outer iteration50.
 

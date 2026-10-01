@@ -1,0 +1,59 @@
+{
+  "scope": "Only3b_sft then7b_sft,150iterations each,on one node8xA10080GB",
+  "model_sizes": {
+    "3b": {
+      "parameters": 3085938688,
+      "base_BF16_weight_bytes": 6171877376,
+      "estimated_native_checkpoint_bytes": 38275923968
+    },
+    "7b": {
+      "parameters": 7615616512,
+      "base_BF16_weight_bytes": 15231233024,
+      "estimated_native_checkpoint_bytes": 91387398144
+    }
+  },
+  "checkpoint_estimation": "FP32 model + two FP32 Adam moments; conservative extra tied embedding serialization for3B",
+  "final_checkpoints_GB": 129.663322112,
+  "peak_checkpoints_GB": 221.050720256,
+  "base_weights_GB": 21.4031104,
+  "free_disk_minimum_GB": 350,
+  "free_disk_recommended_GB": [
+    400,
+    500
+  ],
+  "reference_timing": {
+    "backbone": "Qwen2.5-1.5B-Instruct",
+    "gpus": "4xRTX4090",
+    "run": "Original_OPSD_FullTrajectorySFT_Cosine50_TokenMean",
+    "iterations": [
+      1,
+      49
+    ],
+    "observed_rounds": 49,
+    "median_step_seconds": 1191.896335909143
+  },
+  "target_hardware_full_training_timed": false,
+  "estimated_150_iteration_hours": {
+    "3b_sft": [
+      30,
+      55
+    ],
+    "7b_sft": [
+      60,
+      100
+    ]
+  },
+  "estimated_sequential_training_hours": [
+    90,
+    155
+  ],
+  "setup_hours": [
+    2,
+    8
+  ],
+  "estimated_total_days": [
+    4,
+    7
+  ],
+  "timing_status": "Planning extrapolation only; recalibrate using each backbone first3-5completed rounds and phase-specific timings."
+}

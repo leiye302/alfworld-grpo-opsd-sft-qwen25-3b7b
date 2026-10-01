@@ -1,6 +1,6 @@
 {
   "passed": true,
-  "tests": 8,
+  "tests": 9,
   "skipped": 0,
   "failure_modes_checked": [
     "missing rank",
@@ -24,10 +24,11 @@
     "delete_previous_only_after_verified_save": true
   },
   "real_3b_7b_checkpoint_tensor_reload_tested": false,
+  "default_sft_only_queue_checked": true,
   "files": {
     "runtime/checkpoint_retention.py": "bb5cccf00a6af0db1004bbcf30c4e54a3c4a072e632b772e5fe5b2665d31e938",
     "runtime/storage_guard.py": "75e8759ebf21eddbb2b8ad6102dc4bd8d9ef5ee0af7c92bbc0c91bdaa9e87605",
-    "scripts/handoff.py": "cb6e48e6b777a0b3f4916b0fd05cca4a84dcfdd0c1302fbbe873a39ac399897c",
+    "scripts/handoff.py": "8083610b88b183656ea2569534ddc1af12099dfa15b734a70c22c4a56efee974",
     "scripts/preflight.py": "924a09c6465b2e2b639bdd78016a7d71ef243ca242fa8a318050ed3f6ef423bc"
   },
   "host_platform": "Linux",

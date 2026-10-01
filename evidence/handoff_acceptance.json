@@ -27,5 +27,11 @@
     "delete_previous_only_after_verified_save": true
   },
   "checkpoint_retention_linux_checks_passed": true,
-  "checkpoint_retention_acceptance_file": "evidence/checkpoint_retention_acceptance.json"
+  "checkpoint_retention_acceptance_file": "evidence/checkpoint_retention_acceptance.json",
+  "authorized_run_groups": [
+    "3b_sft",
+    "7b_sft"
+  ],
+  "default_queue_SFT_only_checked": true,
+  "resource_estimate_file": "evidence/sft_only_resource_estimate.json"
 }

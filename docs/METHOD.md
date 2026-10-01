@@ -1,6 +1,6 @@
 # Frozen method and comparison contract
 
-Backbone: Qwen2.5-3B-Instruct or Qwen2.5-7B-Instruct, full-parameter training. Each backbone has its own freshly initialized baseline and method run; neither continues a previous1.5B checkpoint.
+Backbone: Qwen2.5-3B-Instruct or Qwen2.5-7B-Instruct, full-parameter training. The current handoff runs only the two fresh method groups3b_sft and7b_sft, each to150 iterations. Baseline source/configurations are retained to document the native objective, but baseline runs are not part of this handoff. Neither backbone continues a previous1.5B checkpoint.
 
 The shared foundation is the selected SDAR implementation of **GRPO+OPSD**, not the earlier signed-gap modification. Preserve native rewards, invalid-action penalties, grouping/advantages, old-policy probabilities, Reference KL, entropy regularization, mini/microbatch subdivision, Adam and learning-rate scheduling. Teacher scoring finishes before the native Actor updates and is detached.
 

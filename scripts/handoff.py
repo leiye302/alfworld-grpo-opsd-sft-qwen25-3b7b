@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portable preparation and matched four-run launch; never modifies the frozen trainer."""
+"""Prepare and launch the two expert-SFT runs without changing the frozen trainer."""
 from pathlib import Path
 import argparse, contextlib, hashlib, json, os, platform, shutil, subprocess, sys, sysconfig, tarfile, time, urllib.error, urllib.parse, urllib.request
 
@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'runtime'))
 from checkpoint_retention import POLICY as CHECKPOINT_POLICY, verify_checkpoint
 OWNER, NAME = 'leiye302', 'alfworld-grpo-opsd-sft-qwen25-3b7b'
+DEFAULT_RUNS = (('3b', 'sft'), ('7b', 'sft'))
 DATA_SHA = '3aa3796f8d07a3d8fc091c969281b9e22ae2249935038af575545b0d87a623b7'
 MANIFEST_SHA = 'e080ddeac481c19c1e76a000d3a87ee1509a719737869274ecbe9d221d01100b'
 VAL_SHA = 'd4bd4aa2d5e553e5eb9b61f60450315ad7d2f26032428e13c8f2e2d806aa4cc8'
@@ -207,9 +208,8 @@ def main():
     parser.add_argument('--gpu',action='store_true')
     opts=parser.parse_args(); work=opts.work.expanduser().resolve()
     if opts.command=='plan':
-        for size in ('3b','7b'):
-            for method in ('baseline','sft'):
-                print(json.dumps({'group':size+'_'+method,'args':arguments(work,work/'runs'/(size+'_'+method),size,method,opts.resume)}))
+        for size,method in DEFAULT_RUNS:
+            print(json.dumps({'group':size+'_'+method,'args':arguments(work,work/'runs'/(size+'_'+method),size,method,opts.resume)}))
         return
     if opts.command=='prepare': prepare(work); return
     if opts.command=='check': check(work,opts.gpu); return
@@ -218,7 +218,7 @@ def main():
     with (work/'training_queue.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         check(work,True)
-        groups=[(opts.size,opts.method)] if opts.command=='run' else [(s,m) for s in ('3b','7b') for m in ('baseline','sft')]
+        groups=[(opts.size,opts.method)] if opts.command=='run' else DEFAULT_RUNS
         if any(s is None or m is None for s,m in groups): parser.error('run requires --size and --method')
         for size,method in groups: run_one(work,size,method,opts.resume)
 

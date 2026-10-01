@@ -1,30 +1,28 @@
-# ALFWorld：Qwen2.5-3B /7B，原版GRPO＋OPSD与专家轨迹SFT
+# ALFWorld：Qwen2.5-3B /7B，GRPO＋OPSD＋专家轨迹SFT
 
-这是可交给另一位研究者或AI agent的训练交接仓库，目标是**单机8×A10080GB，四组分别从基模训150轮**。
+这是可交给另一位研究者或AI agent的训练交接仓库。本次任务是**单机8×A10080GB，只跑3B和7B两个SFT方法组，各自从对应基模训到150轮**。仓库保留baseline源码和配置供核对配方；本次交接不启动baseline实验。
 
 | 组别 | 初始化 | 训练目标 | 结束轮数 |
 |---|---|---|---:|
-| `3b_baseline` | Qwen2.5-3B-Instruct | 选定SDAR源码的原版GRPO＋OPSD |150|
-| `3b_sft` | 同一3B基模 | 上述目标＋专家完整reasoning/action SFT |150|
-| `7b_baseline` | Qwen2.5-7B-Instruct | 同一原版GRPO＋OPSD |150|
-| `7b_sft` | 同一7B基模 | 上述目标＋专家完整reasoning/action SFT |150|
+| `3b_sft` | Qwen2.5-3B-Instruct | 选定SDAR源码的原版GRPO＋OPSD＋专家完整reasoning/action SFT |150|
+| `7b_sft` | Qwen2.5-7B-Instruct | 同一方法 |150|
 
 **OPSD固定系数0.01；SFT初始系数0.1，按外层轮数余弦衰减，第50轮归零；活跃轮每轮全局抽16条专家轨迹，监督有效输出token的全局token-mean。** 两组均保留Reference KL、奖励处理、动作有效性惩罚和原生mini-batch更新。不是先前修改过的带符号OPSD，也不是OPSD增长/SFT下降的互补日程。方法公式和实现边界见[docs/METHOD.md](docs/METHOD.md)。
 
-固定验证使用已有的**128个valid_seen任务**，包括初始状态、环境种子和每个任务每个决策的生成种子。训练前验证一次，随后每10轮验证；每50轮保存完整可续训检查点，150轮结束。**第100轮保存并验收后删50轮，第150轮保存并验收后删100轮，最终每组只留150轮。** 四组不共享训练后的权重。
+固定验证使用已有的**128个valid_seen任务**，包括初始状态、环境种子和每个任务每个决策的生成种子。训练前验证一次，随后每10轮验证；每50轮保存完整可续训检查点，150轮结束。**第100轮保存并验收后删50轮，第150轮保存并验收后删100轮，最终每组只留150轮。** 两个backbone各自从对应基模开始，不共享训练后的权重。
 
 ## 给接手AI的执行指令
 
-任务已经授权为上述四组训练。先读本README和METHOD，准备环境/下载资产，完成检查，然后启动四组队列。不要修改方法、全局batch、采样/验证协议、损失归一化或训练预算；不要使用之前1.5B实验的checkpoint初始化3B/7B。不要把OPSD换成另一个版本。只下载本仓库Release的指定资产和下文两个锁定基模，不下载来源服务器的其它内容，不需要公司服务器登录权限或任何API密钥。
+任务已经授权为上述两个SFT方法组训练。先读本README和METHOD，准备环境/下载资产，完成检查，然后启动两组队列。**仅运行`3b_sft`和`7b_sft`，不启动baseline。** 不要修改方法、全局batch、采样/验证协议、损失归一化或训练预算；不要使用之前1.5B实验的checkpoint初始化3B/7B。不要把OPSD换成另一个版本。只下载本仓库Release的指定资产和下文两个锁定基模，不下载来源服务器的其它内容，不需要公司服务器登录权限或任何外置模型API密钥。
 
-四组默认**依次**使用全部8张卡；不是每组分两张卡，也不是四组同时抢8张卡。接手者自己的GitHub账号需先被仓库所有者加入访问名单。本仓库是私有的，网页访问和Release下载都需要该账号授权。可使用`gh auth login`，或安全设置自己的`GH_TOKEN`；不要把token写入代码、文档、命令行日志或Git提交。
+两组默认**依次**使用全部8张卡：`3b_sft → 7b_sft`。接手者自己的GitHub账号需先被仓库所有者邀请为协作者并接受邀请。本仓库继续保持私有；网页访问、代码拉取和Release下载都需要该账号授权。训练服务器先用`gh auth login`登录自己的账号，再执行下文命令。也可安全设置自己的`GH_TOKEN`；不要把token写入代码、文档、命令行日志或Git提交。
 
 ## 1. 机器准备
 
 - Linux x86_64、Python3.12，建议Ubuntu22.04；具备`git`、`g++`、Python venv、正常NVIDIA驱动和CUDA12.8运行能力。
 - 单机**8×A10080GB**均已分配给本实验；发现其它用户的计算进程时先等待，禁止停掉别人任务。
 - 建议1TiB主机内存，开训检查要求至少450GiB空闲内存。冻结的内存适配器每rank预留48GiB固定页主机内存，八rank合计384GiB。不要擅自删掉适配器或改状态精度以绕过检查。
-- 按当前保留规则，四组最终完整检查点合计约260GB；新旧检查点交替时约350GB峰值，另需基模、环境、日志与缓存空间。建议**至少500GB空闲磁盘，600GB更宽裕**，并持续监测空间。只能在新检查点完整保存后删除旧的，不能只按最终容量准备磁盘。
+- 按当前保留规则，两组最终完整检查点合计约130GB；新旧检查点交替时约220GB峰值，另需约21GB基模、环境、日志与缓存空间。建议**至少350GB空闲磁盘，预留400～500GB更宽裕**，并持续监测空间。只能在新检查点完整保存后删除旧的，不能只按最终容量准备磁盘。容量估算见第8节。
 - 使用较短的工作目录，例如`/data/alfwork`，避免Ray本地socket路径超长。所有缓存/日志/临时文件和结果都放在指定工作目录。
 
 ## 2. 拉仓库、安装冻结环境
@@ -75,27 +73,25 @@ python scripts/handoff.py check --work /data/alfwork --gpu
 
 本仓库发布时的实际检查和限制记录在[evidence/handoff_acceptance.json](evidence/handoff_acceptance.json)。维护者的CPU数据/配置检查**不等于对方8×A100上已经完成3B/7B训练**；目标机器GPU检查通过后才开训。
 
-## 5. 启动四组150轮队列
+## 5. 启动两个SFT方法组，各150轮
 
 ```bash
 mkdir -p /data/alfwork
 nohup python -u scripts/handoff.py run-all --work /data/alfwork > /data/alfwork/queue.log 2>&1 < /dev/null &
 ```
 
-队列顺序：3B baseline→3B方法→7B baseline→7B方法。每组150轮，检查点50轮一次，固定验证10轮一次。检查点保留为50→100→150：新检查点验收成功才清理上一份；未通过时保留旧检查点并报错。主机不关机、不停止进程即可独立运行；合上接手者的电脑不影响远端训练。
+`run-all`和`plan`的默认组别均为`3b_sft → 7b_sft`，不会启动baseline。每组150轮，检查点50轮一次，固定验证10轮一次。检查点保留为50→100→150：新检查点验收成功才清理上一份；未通过时保留旧检查点并报错。主机不关机、不停止进程即可独立运行；合上接手者的电脑不影响远端训练。
 
 已拉过旧版仓库的接手者，需要先`git pull --ff-only`再启动。正在运行的训练进程不会自动采用新的保存规则；不要运行中替换源码，需要停止后按完整检查点续跑才生效。`configs/{3b,7b}_{baseline,sft}.json`是Linux示例路径，实际生效路径以`handoff.py plan --work ...`输出为准。
 
 只启动一组：
 
 ```bash
-python -u scripts/handoff.py run --work /data/alfwork --size 3b --method baseline
 python -u scripts/handoff.py run --work /data/alfwork --size 3b --method sft
-python -u scripts/handoff.py run --work /data/alfwork --size 7b --method baseline
 python -u scripts/handoff.py run --work /data/alfwork --size 7b --method sft
 ```
 
-上述四条是选择示例，**不要同时启动**。需要查看完整生效参数时执行`python scripts/handoff.py plan --work /data/alfwork`。
+上述两条是单组选择示例，**不要同时启动，也不要在队列运行时重复启动**。需要查看完整生效参数时执行`python scripts/handoff.py plan --work /data/alfwork`，输出只包含这两个SFT组。
 
 ## 6. 中断后续跑
 
@@ -107,11 +103,11 @@ nohup python -u scripts/handoff.py run-all --work /data/alfwork --resume > /data
 
 自动跳过完整结束的组，其余使用原生完整FSDP checkpoint恢复Actor、Adam、学习率、dataloader/RNG和外层计数。从最近保存的完整轮次继续到总计150，不另加150轮。没有完整检查点时原生逻辑会重新从基模开始；不要把中途半写目录当可恢复状态。新跑默认拒绝覆盖已有实验目录。
 
-报错时保留日志、完整checkpoint和identity；不要擅自改变batch、梯度累积、KL、精度或SFT库。显存不足若确需micro/offload硬件适配，必须单独记录，并让同一backbone的baseline/方法组使用完全一致的适配后重新开实验。
+报错时保留日志、完整checkpoint和identity；不要擅自改变batch、梯度累积、KL、精度或SFT库。显存不足若确需micro/offload硬件适配，必须单独记录；后续若做baseline对照，同一backbone必须使用相同硬件适配，本次交接仍只运行两个SFT组。
 
 ## 7. 记录和交回
 
-每组目录`/data/alfwork/runs/{3b_baseline,3b_sft,7b_baseline,7b_sft}`保存：
+每组目录`/data/alfwork/runs/{3b_sft,7b_sft}`保存：
 
 - `reports/launch_args.json`、`identity.json`：生效配置、Git commit、模型revision、专家库和固定val哈希。
 - `logs/metrics.jsonl`：reward及其标准差、轨迹成功率、entropy、response length、梯度范数、KL、OPSD和SFT loss/coefficient等训练器原生指标。
@@ -123,13 +119,43 @@ nohup python -u scripts/handoff.py run-all --work /data/alfwork --resume > /data
 
 第一轮跨至少两次mini-batch更新后检查FP32小更新、optimizer.step次数及权重同步；不能只看初始化时的probability ratio=1。每次保存后检查八rank的模型/Adam/随机状态、数据状态、tokenizer和最新轮数标记。原生保存返回且状态归档结构通过后，只删除本组被替代的50／100轮目录；保存失败不删旧检查点，并恢复上一份有效检查点的续跑标记。这个结构检查不替代加载模型的内容验收。不创建海量逐token文件，原始结果尽量按轮压缩/合并。
 
-四组结束后：
+两组结束后：
 
 ```bash
 python scripts/collect_results.py --work /data/alfwork
 ```
 
-输出合并的验证CSV、四组训练指标JSONL和3B/7B对比折线图。交回完整0～150固定val曲线及150轮终点，附配置与运行日志。不要用训练reward代替验证成功率，也不要把valid_seen称为valid_unseen论文测试成绩。该单种子实验不能单独证明鲁棒性。
+输出合并的验证CSV、两个SFT组训练指标JSONL和3B/7B的验证曲线。交回完整0～150固定val曲线及150轮终点，附配置与运行日志。不要用训练reward代替验证成功率，也不要把valid_seen称为valid_unseen论文测试成绩。该单种子实验不能单独证明鲁棒性。
+
+## 8. 空间和时间估算
+
+下表按两组顺序运行、共享基模下载、每组只保留最新完整checkpoint计算；GB为十进制单位。
+
+| 内容 | 估计空间 |
+|---|---:|
+| 两个BF16基模 | 约21GB |
+| 3B每份完整FSDP训练状态 | 约38GB |
+| 7B每份完整FSDP训练状态 | 约91GB |
+| 两组最终checkpoint合计 | 约130GB |
+| 顺序训练时checkpoint最高同时占用 | 约220GB |
+| 环境、下载缓存、运行缓存与两组日志 | 预留约50～100GB |
+| 建议开跑前空闲空间 | 最低350GB，推荐400～500GB |
+
+峰值出现在3B已结束、7B保存新checkpoint而旧checkpoint尚未删除时：
+
+$$S_{\mathrm{checkpoint,peak}}\approx S_{3B}+2S_{7B}\approx38+2\times91=220\ \mathrm{GB}.$$
+
+这是FP32模型参数和Adam状态的完整续训档容量估计；具体还受FSDP分片、共享embedding序列化及少量元数据影响。额外导出合并权重、保留旧日志副本或失败的半写checkpoint会增加占用，应单独计入；容量估计不授权删除其它资料。
+
+**本仓库尚未在目标8×A10080GB上实测完整3B/7B训练耗时。** 参照维护者同配方1.5B四卡4090日志（前49轮训练轮耗时中位数约19.9分钟），对模型大小、八卡并行与环境开销做粗估：
+
+| 实验 | 150轮预计耗时，含验证/保存的粗略预留 |
+|---|---:|
+| `3b_sft` | 约30～55小时 |
+| `7b_sft` | 约60～100小时 |
+| 两组顺序训练 | 约90～155小时 |
+
+下载、环境安装和检查另预留2～8小时；整体按**约4～7天**安排。此为规划范围，不能用于提前设置固定自动关机。实际CPU、NVLink、磁盘吞吐、成功率及响应长度均会影响耗时。接手AI应在每个backbone前3～5轮后，按`logs/metrics.jsonl`中的`timing_s/step`、验证和保存耗时重新估算剩余时间；SFT第50轮归零，前后阶段分开统计。
 
 ## 来源
 

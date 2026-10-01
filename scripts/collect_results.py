@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Consolidate the four fixed-validation curves and local training metrics."""
+"""Consolidate the two expert-SFT fixed-validation curves and training metrics."""
 from pathlib import Path
 import argparse, csv, json
 ROOT=Path(__file__).resolve().parents[1]
@@ -8,7 +8,7 @@ def main():
     work=o.work.resolve();out=work/'results';out.mkdir(parents=True,exist_ok=True)
     rows=[];metrics=[]
     for size in ('3b','7b'):
-        for group in ('baseline','sft'):
+        for group in ('sft',):
             run=work/'runs'/(size+'_'+group)
             for path in sorted((run/'fixed_validation/results').glob('iteration_*.json')):
                 data=json.loads(path.read_text())
@@ -28,7 +28,7 @@ def main():
     import matplotlib.pyplot as plt
     fig,axes=plt.subplots(1,2,figsize=(11,4),sharey=True)
     for axis,size in zip(axes,('3b','7b')):
-        for group in ('baseline','sft'):
+        for group in ('sft',):
             selected=[r for r in rows if r['backbone']==size and r['group']==group and r['success_rate'] is not None]
             axis.plot([r['iteration'] for r in selected],[100*r['success_rate'] for r in selected],marker='o',label=group)
         axis.set_title('Qwen2.5-'+size.upper());axis.set_xlabel('Outer iteration');axis.grid(alpha=.25);axis.legend()

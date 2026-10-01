@@ -3,7 +3,9 @@
 from pathlib import Path
 import argparse
 import ast
+import contextlib
 import hashlib
+import io
 import json
 import os
 import random
@@ -193,6 +195,25 @@ class RetentionChecks(unittest.TestCase):
                 for key,value in previous.items():
                     if key not in excluded:self.assertEqual(actual[key],value,key)
 
+    def test_default_queue_and_plan_only_launch_two_sft_runs(self):
+        work=self.run.parent.parent
+        output=io.StringIO()
+        with patch.object(sys,'argv',['handoff','plan','--work',str(work)]), contextlib.redirect_stdout(output):
+            handoff.main()
+        plans=[json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual([item['group'] for item in plans],['3b_sft','7b_sft'])
+        for item in plans:
+            self.assertIn('trainer.total_epochs=150',item['args'])
+            self.assertIn('+actor_rollout_ref.actor.expert_action_sft.enabled=true',item['args'])
+        fcntl=SimpleNamespace(flock=lambda *args:None,LOCK_EX=1,LOCK_NB=2)
+        with patch.dict(sys.modules,{'fcntl':fcntl}), \
+             patch.object(sys,'argv',['handoff','run-all','--work',str(work),'--resume']), \
+             patch.object(handoff,'check') as check, patch.object(handoff,'run_one') as launch:
+            handoff.main()
+        check.assert_called_once_with(work,True)
+        self.assertEqual([tuple(call.args[1:]) for call in launch.call_args_list],
+                         [('3b','sft',True),('7b','sft',True)])
+
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -205,6 +226,7 @@ def main():
                   'wrong marker','RPC failure','unapproved path/iteration','cross-run preservation'],
                 'actual_native_save_method_executed':True,'gpu_used':False,
                 'checkpoint_policy':retention.POLICY,'real_3b_7b_checkpoint_tensor_reload_tested':False,
+                'default_sft_only_queue_checked':True,
                 'files':{name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in
                   ('runtime/checkpoint_retention.py','runtime/storage_guard.py','scripts/handoff.py','scripts/preflight.py')}}
         options.report.parent.mkdir(parents=True,exist_ok=True)
