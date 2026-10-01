@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Portable preparation and matched four-run launch; never modifies the frozen trainer."""
 from pathlib import Path
-import argparse, contextlib, hashlib, json, os, platform, shutil, subprocess, sys, tarfile, time, urllib.error, urllib.parse, urllib.request
+import argparse, contextlib, hashlib, json, os, platform, shutil, subprocess, sys, sysconfig, tarfile, time, urllib.error, urllib.parse, urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 OWNER, NAME = 'leiye302', 'alfworld-grpo-opsd-sft-qwen25-3b7b'
@@ -72,7 +72,7 @@ def extract_verified(path, dest):
 def environment(work, run):
     work, run = Path(work).resolve(), Path(run).resolve()
     env = os.environ.copy()
-    env.update(SDAR_RUN_ROOT=str(run), SDAR_BASE_ROOT=str(work/'assets_bundle'),
+    env.update(SDAR_RUN_ROOT=str(run), SDAR_BASE_ROOT=str(work/'assets_bundle'),SDAR_QUOTA_BASE=str(run.parent),
         SDAR_RESPONSE_ONLY_LOGITS='1', SDAR_ALFWORLD_SQLITE=str(work/'assets_bundle/assets/alfworld.sqlite'),
         ALFWORLD_DATA=LOGICAL_ALFWORLD, FULLTRAJ_FIXED_VALIDATION='1',
         PYTHONPATH=os.pathsep.join(map(str,[run,ROOT/'framework',ROOT/'runtime',work/'assets_bundle/vendor/deps',work/'assets_bundle/vendor/restored_deps'])),
@@ -81,6 +81,10 @@ def environment(work, run):
         RAY_USAGE_STATS_ENABLED='0', OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MAX_JOBS='1',
         CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7', NCCL_DEBUG='WARN',
         PYTORCH_CUDA_ALLOC_CONF='expandable_segments:False', WANDB_MODE='offline')
+    # The shipped tiny allocator links libcudart; locate the recipient's pip
+    # CUDA runtime instead of relying on the source host's library runpath.
+    cuda_lib=Path(sysconfig.get_paths()['purelib'])/'nvidia/cuda_runtime/lib'
+    if cuda_lib.is_dir(): env['LD_LIBRARY_PATH']=str(cuda_lib)+os.pathsep+env.get('LD_LIBRARY_PATH','')
     directories = {
         'TMPDIR':'tmp','TMP':'tmp','TEMP':'tmp','RAY_TMPDIR':'ray',
         'HF_HOME':'cache/hf','HF_HUB_CACHE':'cache/hf/hub','HF_DATASETS_CACHE':'cache/hf/datasets',
@@ -120,6 +124,8 @@ def arguments(work, run, size, method, resume=False):
 
 def prepare(work):
     work.mkdir(parents=True,exist_ok=True)
+    os.environ.update(HF_HOME=str(work/'cache/hf'),HF_HUB_CACHE=str(work/'cache/hf/hub'),
+                      HF_HUB_OFFLINE='0',HF_HUB_DISABLE_TELEMETRY='1')
     lock=json.loads((ROOT/'configs/assets.lock.json').read_text())
     archive=work/lock['name']
     download_asset(lock,archive); extract_verified(archive,work/'assets_bundle')
@@ -165,7 +171,7 @@ def run_one(work, size, method, resume):
         'fixed_validation_sha256':VAL_SHA,'resume':resume}
     write_json(run/'reports/identity.json',identity)
     entry=run/'train_entry.py'
-    entry.write_text("import json,os,runpy,sys\nfrom pathlib import Path\nimport ray\nr=Path(os.environ['SDAR_RUN_ROOT'])\nsys.argv=[str(r/'train_entry.py')]+json.loads((r/'reports/launch_args.json').read_text())\ntry: runpy.run_module('verl.trainer.main_sdar',run_name='__main__')\nfinally:\n if ray.is_initialized(): ray.shutdown()\n")
+    entry.write_text("import json,os,runpy,sys\nfrom pathlib import Path\nimport ray\nfrom storage_guard import for_run\nr=Path(os.environ['SDAR_RUN_ROOT'])\nfor_run().initialize()\nsys.argv=[str(r/'train_entry.py')]+json.loads((r/'reports/launch_args.json').read_text())\ntry: runpy.run_module('verl.trainer.main_sdar',run_name='__main__')\nfinally:\n if ray.is_initialized(): ray.shutdown()\n")
     # Native resume restores actor + Adam + LR + dataloader + RNG; no HF-only resume.
     with (run/'logs/driver.log').open('ab',buffering=0) as log:
         result=subprocess.run([sys.executable,'-u',str(entry)],env=env,cwd=ROOT/'framework',stdout=log,stderr=subprocess.STDOUT)
@@ -173,11 +179,20 @@ def run_one(work, size, method, resume):
     evaluations=[run/'fixed_validation/results'/f'iteration_{k:06d}.json' for k in range(0,151,10)]
     for path in evaluations:
         if not path.exists(): raise RuntimeError('Missing fixed evaluation '+str(path)+'; do not mark complete.')
+        result=json.loads(path.read_text())
+        assert result['manifest_sha256']==VAL_SHA and result['tasks']==128
     metrics=run/'logs/metrics.jsonl'
     if not metrics.exists(): raise RuntimeError('Missing local metrics after training; do not mark complete.')
     rows=[json.loads(x) for x in metrics.read_text().splitlines() if x.strip()]
     steps=[int(x.get('step',x.get('global_steps',-1))) for x in rows]
     if max(steps,default=-1)<150: raise RuntimeError('Process exited before iteration150; native checkpoint is retained.')
+    for iteration in range(25,151,25):
+        checkpoint=run/'checkpoints'/f'global_step_{iteration}'
+        expected=[checkpoint/'data.pt']+[checkpoint/'actor'/f'{kind}_world_size_8_rank_{rank}.pt'
+            for kind in ('model','optim','extra_state') for rank in range(8)]
+        if not all(p.is_file() and p.stat().st_size>0 for p in expected):
+            raise RuntimeError('Missing or empty native checkpoint state at '+str(iteration)+'; do not mark complete.')
+    assert (run/'checkpoints/latest_checkpointed_iteration.txt').read_text().strip()=='150'
     write_json(run/'COMPLETE.json',dict(identity,completed_at=time.time(),latest_logged_iteration=max(steps),validation_files=len(evaluations)))
     print('Completed '+run.name,flush=True)
 

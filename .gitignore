@@ -1,4 +1,6 @@
 .venv/
+.bootstrap_cache/
+.bootstrap_tmp/
 work/
 *.partial
 __pycache__/

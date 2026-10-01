@@ -1,0 +1,43 @@
+--- original/verl/workers/actor/dp_actor.py
++++ handoff/verl/workers/actor/dp_actor.py
+@@ -321,6 +321,11 @@
+         temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
+         multi_turn = data.meta_info.get("multi_turn", False)
+ 
++        expert_plan = None
++        if self.config.get("expert_action_sft", {}).get("enabled", False):
++            from verl.trainer.ppo.expert_action_sft.actor import prepare_auxiliary, backward_auxiliary
++            expert_plan = prepare_auxiliary(self, data)
++
+         select_keys = ["responses", "input_ids", "attention_mask", "position_ids", "old_log_probs", "advantages"]
+         if multi_turn:
+             select_keys.append("loss_mask")
+@@ -341,6 +346,8 @@
+             dataloader = batch.split(self.config.ppo_mini_batch_size)
+ 
+         metrics = {}
++        expert_optimizer_attempts = 0
++        expert_optimizer_updates = 0
+         for epoch in range(self.config.ppo_epochs):
+             for batch_idx, data in enumerate(dataloader):
+                 # split batch into micro_batches
+@@ -474,8 +481,19 @@
+                     }
+                     append_to_dict(metrics, data)
+ 
++                if expert_plan is not None and batch_idx == len(dataloader) - 1:
++                    # One configured auxiliary expert batch per OUTER call,
++                    # once at the final native mini-update. All Student losses
++                    # above and the optimizer-step location below stay native.
++                    append_to_dict(metrics, backward_auxiliary(self, expert_plan))
+                 grad_norm = self._optimizer_step()
++                if expert_plan is not None:
++                    expert_optimizer_attempts += 1
++                    expert_optimizer_updates += int(torch.isfinite(grad_norm).item())
+                 data = {"actor/grad_norm": grad_norm.detach().item()}
+                 append_to_dict(metrics, data)
+         self.actor_optimizer.zero_grad()
++        if expert_plan is not None:
++            metrics["expert_action_sft/optimizer_step_attempts"] = expert_optimizer_attempts
++            metrics["expert_action_sft/optimizer_updates"] = expert_optimizer_updates
+         return metrics

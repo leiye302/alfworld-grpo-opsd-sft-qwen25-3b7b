@@ -41,7 +41,7 @@ source .venv/bin/activate
 
 也可用配置好认证的`git clone https://github.com/leiye302/alfworld-grpo-opsd-sft-qwen25-3b7b.git`。Python3.12可执行文件不是`python3.12`时，用`PYTHON312=/实际路径/python bash scripts/bootstrap.sh`。
 
-bootstrap只建立本仓库独立环境。运行时还会优先使用Release中的冻结模块快照，关键版本包括PyTorch2.8.0+cu128、vLLM0.11.0、Transformers4.57.3、Ray2.50.0、ALFWorld0.4.2、TextWorld1.6.2、FlashAttention2.7.4.post1。**不要执行上游的`pip install -r framework/requirements.txt`，不要升级整套依赖**，它不是这次实验的已选环境。
+bootstrap只建立本仓库独立环境，使用已通过Linux/Python3.12依赖解析的版本约束。运行时还会优先使用Release中的冻结模块快照，关键版本包括PyTorch2.8.0+cu128、vLLM0.11.0、Transformers4.57.3、Ray2.50.0、ALFWorld0.4.2、TextWorld1.6.2、FlashAttention2.7.4.post1。**不要执行上游的`pip install -r framework/requirements.txt`，不要升级整套依赖**，它不是这次实验的已选环境。
 
 ## 3. 下载且只下载所需资产
 
@@ -130,4 +130,4 @@ python scripts/collect_results.py --work /data/alfwork
 
 ## 来源
 
-底座：[ZJU-REAL/SDAR](https://github.com/ZJU-REAL/SDAR)，选定上游commit `d511f043afe9199b8576fc99ea52e12d84841f32`。当前冻结源码/硬件补丁见`evidence/source_snapshot.json`、`hardware_patch.json`；保留上游许可证与各组件许可证。专家库和新增方法用于本次授权的研究交接。Qwen模型遵守对应官方model card/license。
+底座：[ZJU-REAL/SDAR](https://github.com/ZJU-REAL/SDAR)，选定上游commit `d511f043afe9199b8576fc99ea52e12d84841f32`。当前冻结源码/硬件补丁见`evidence/source_snapshot.json`、`hardware_patch.json`；I/O配额保护范围的路径适配另见`runtime_portability_patch.json`。该适配只允许释放当前实验自己预留的空文件，不删除数据/检查点，不改变训练计算。保留上游许可证与各组件许可证。专家库和新增方法用于本次授权的研究交接。Qwen模型遵守对应官方model card/license。

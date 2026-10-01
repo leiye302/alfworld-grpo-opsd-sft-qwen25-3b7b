@@ -14,7 +14,7 @@ def main():
                 data=json.loads(path.read_text())
                 rows.append({'backbone':size,'group':group,'iteration':int(path.stem.split('_')[-1]),
                              'success_rate':data.get('success_rate',data.get('metrics',{}).get('val/success_rate')),
-                             'successes':data.get('successes'),'test_score':data.get('metrics',{}).get('val/test_score'),
+                             'successes':data.get('successes'),'test_score':data.get('native_metrics',{}).get('val/test_score'),
                              'manifest_sha256':data.get('manifest_sha256')})
             source=run/'logs/metrics.jsonl'
             if source.exists():

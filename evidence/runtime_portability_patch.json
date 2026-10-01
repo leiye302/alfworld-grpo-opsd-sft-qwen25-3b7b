@@ -1,0 +1,7 @@
+{
+  "purpose": "Portable I/O quota scope for recipient work directories; successful calls and all training math unchanged",
+  "file": "runtime/quota_io.py",
+  "before_sha256": "e8c69a1c19cbcfe60acf866d4ed9dfe8d7a3efd75ffc2079f2761aba0b573044",
+  "after_sha256": "77ce479464bb22db53a076569a039f692158243d0ddf74dd4709461339f17d45",
+  "configuration": "SDAR_QUOTA_BASE is the actual parent of SDAR_RUN_ROOT; deletion remains limited to own empty reserve slots"
+}

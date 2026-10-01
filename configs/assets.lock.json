@@ -1,0 +1,12 @@
+{
+  "schema": "model-free-release-asset-v1",
+  "name": "alfworld-runtime-assets-v1.tar.gz",
+  "bytes": 464239048,
+  "sha256": "73b2d385bf930a75eb7d7d2ee27764088e00c3506262b7f0a63505f9b64520a2",
+  "api_url": "https://api.github.com/repos/leiye302/alfworld-grpo-opsd-sft-qwen25-3b7b/releases/assets/602641532",
+  "browser_download_url": "https://github.com/leiye302/alfworld-grpo-opsd-sft-qwen25-3b7b/releases/download/assets-v1/alfworld-runtime-assets-v1.tar.gz",
+  "release_tag": "assets-v1",
+  "uncompressed_bytes": 2983909613,
+  "members": 9743,
+  "contains_pretrained_weights": false
+}

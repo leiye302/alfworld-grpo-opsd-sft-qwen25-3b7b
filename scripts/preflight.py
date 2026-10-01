@@ -106,14 +106,24 @@ def main():
             props=torch.cuda.get_device_properties(i)
             assert 'A100' in props.name and props.total_memory>=75*1024**3,(i,props.name,props.total_memory)
         process=subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
-        assert not process,'GPU compute processes are already present. Do not stop another user\'s job.'
+        foreign=[int(x.strip()) for x in process.splitlines() if x.strip().isdigit() and int(x.strip())!=os.getpid()]
+        assert not foreign,'GPU compute processes are already present. Do not stop another user\'s job.'
         import psutil
-        assert psutil.virtual_memory().available>=450*1024**3,'Eight ranks reserve384GiB pinned host memory; prepare at least450GiB available RAM (prefer1TiB installed).'
+        available=psutil.virtual_memory().available
+        # Container limits can be much smaller than the physical host reported
+        # by psutil. Include the current cgroup budget before reserving host RAM.
+        cgroup=Path('/sys/fs/cgroup')
+        if (cgroup/'memory.max').is_file() and (cgroup/'memory.current').is_file():
+            limit=(cgroup/'memory.max').read_text().strip()
+            if limit!='max': available=min(available,int(limit)-int((cgroup/'memory.current').read_text()))
+        assert available>=450*1024**3,'Eight ranks reserve384GiB pinned host memory; prepare at least450GiB actually available RAM (prefer1TiB installed).'
         import flash_attn
         from flash_attn import flash_attn_func
         q=torch.randn((1,16,4,64),device='cuda',dtype=torch.bfloat16,requires_grad=True)
         flash_attn_func(q,q,q,causal=True).float().sum().backward()
         assert torch.isfinite(q.grad).all()
+        import ctypes
+        ctypes.CDLL(str(ROOT/'runtime/libmanaged_gradient.so'))
     else:
         assert not torch.cuda.is_initialized(),'CPU corpus audit unexpectedly used a GPU'
     report={'passed':True,'metadata_only':o.metadata_only,'gpu_kernel_checked':o.gpu,'versions':versions,
