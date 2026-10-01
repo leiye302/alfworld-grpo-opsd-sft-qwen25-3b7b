@@ -33,27 +33,7 @@
     "median_step_seconds": 1191.896335909143
   },
   "target_hardware_full_training_timed": false,
-  "estimated_150_iteration_hours": {
-    "3b_sft": [
-      30,
-      55
-    ],
-    "7b_sft": [
-      60,
-      100
-    ]
-  },
-  "estimated_sequential_training_hours": [
-    90,
-    155
-  ],
-  "setup_hours": [
-    2,
-    8
-  ],
-  "estimated_total_days": [
-    4,
-    7
-  ],
-  "timing_status": "Planning extrapolation only; recalibrate using each backbone first3-5completed rounds and phase-specific timings."
+  "timing_status": "Earlier absolute hours/days extrapolation withdrawn because its estimation basis differed from the four-run plan. No target8xA100 timing measured; recalibrate on first3-5completed rounds per backbone.",
+  "relative_training_time_to_same_four_run_plan": 0.5,
+  "relative_time_assumption": "Approximate; baseline and method duration within each backbone must be similar. Model downloads and environment preparation are unchanged."
 }
