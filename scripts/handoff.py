@@ -6,6 +6,7 @@ import argparse, contextlib, hashlib, json, os, platform, shutil, subprocess, sy
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'runtime'))
 from checkpoint_retention import POLICY as CHECKPOINT_POLICY, verify_checkpoint
+from hardware_profile import PROFILE as HARDWARE_PROFILE
 OWNER, NAME = 'leiye302', 'alfworld-grpo-opsd-sft-qwen25-3b7b'
 DEFAULT_RUNS = (('3b', 'sft'), ('7b', 'sft'))
 DATA_SHA = '3aa3796f8d07a3d8fc091c969281b9e22ae2249935038af575545b0d87a623b7'
@@ -61,6 +62,7 @@ def environment(work, run):
     env = os.environ.copy()
     env.update(SDAR_RUN_ROOT=str(run), SDAR_BASE_ROOT=str(work/'assets_bundle'),SDAR_QUOTA_BASE=str(run.parent),
         SDAR_RESPONSE_ONLY_LOGITS='1', SDAR_CHECKPOINT_RETENTION_LAST_ONLY='1',
+        SDAR_GPU_STORAGE_PROFILE=HARDWARE_PROFILE['name'],
         SDAR_ALFWORLD_SQLITE=str(work/'assets_bundle/assets/alfworld.sqlite'),
         ALFWORLD_DATA=LOGICAL_ALFWORLD, FULLTRAJ_FIXED_VALIDATION='1',
         PYTHONPATH=os.pathsep.join(map(str,[run,ROOT/'framework',ROOT/'runtime',work/'assets_bundle/vendor/deps',work/'assets_bundle/vendor/restored_deps'])),
@@ -129,7 +131,7 @@ def prepare(work):
         # Config/tokenizer identities are locked separately from giant weights.
         for name,meta in m['metadata_files'].items():
             assert digest(target/name)==meta['sha256'],name
-    print('Preparation complete. Next: check, then run-all.',flush=True)
+    print('Preparation complete. Next: check --gpu, then run --size 3b --method sft.',flush=True)
 
 def check(work, gpu=False):
     if sys.version_info[:2] != (3,12) or platform.system()!='Linux' or platform.machine()!='x86_64':
@@ -157,7 +159,8 @@ def run_one(work, size, method, resume):
     except (OSError,subprocess.CalledProcessError): commit='source-archive'
     identity={'repository_commit':commit,'model':json.loads((ROOT/'configs/models.lock.json').read_text())[size],
         'method':method,'outer_iterations':150,'gpus':8,'expert_sha256':DATA_SHA,'expert_manifest_sha256':MANIFEST_SHA,
-        'fixed_validation_sha256':VAL_SHA,'resume':resume,'checkpoint_policy':CHECKPOINT_POLICY}
+        'fixed_validation_sha256':VAL_SHA,'resume':resume,'checkpoint_policy':CHECKPOINT_POLICY,
+        'hardware_profile':HARDWARE_PROFILE}
     write_json(run/'reports/identity.json',identity)
     entry=run/'train_entry.py'
     entry.write_text("import json,os,runpy,sys\nfrom pathlib import Path\nimport ray\nfrom storage_guard import for_run\nr=Path(os.environ['SDAR_RUN_ROOT'])\nfor_run().initialize()\nsys.argv=[str(r/'train_entry.py')]+json.loads((r/'reports/launch_args.json').read_text())\ntry: runpy.run_module('verl.trainer.main_sdar',run_name='__main__')\nfinally:\n if ray.is_initialized(): ray.shutdown()\n")

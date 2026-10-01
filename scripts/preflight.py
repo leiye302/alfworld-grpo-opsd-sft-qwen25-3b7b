@@ -7,6 +7,7 @@ from types import SimpleNamespace
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 from handoff import DATA_SHA,MANIFEST_SHA,VAL_SHA,CHECKPOINT_POLICY,digest,write_json,arguments
+from hardware_profile import PROFILE as HARDWARE_PROFILE
 
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--work',type=Path,required=True);p.add_argument('--gpu',action='store_true')
@@ -105,12 +106,14 @@ def main():
     import pyarrow.parquet as pq
     train_rows=pq.read_table(work/'assets_bundle/data/text/train.parquet').num_rows
     assert train_rows==16,('Native epoch/outer-iteration budget changed',train_rows)
+    devices=[]
     if o.gpu:
         assert torch.cuda.device_count()==8,'Eight allocated GPUs are required; do not reuse other users\' devices.'
         names=[torch.cuda.get_device_properties(i).name for i in range(8)]
         for i in range(8):
             props=torch.cuda.get_device_properties(i)
-            assert 'A100' in props.name and props.total_memory>=75*1024**3,(i,props.name,props.total_memory)
+            assert 'A100' in props.name and props.total_memory>=HARDWARE_PROFILE['minimum_gpu_memory_bytes'],(i,props.name,props.total_memory)
+            devices.append({'index':i,'name':props.name,'total_memory_bytes':props.total_memory})
         process=subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
         foreign=[int(x.strip()) for x in process.splitlines() if x.strip().isdigit() and int(x.strip())!=os.getpid()]
         assert not foreign,'GPU compute processes are already present. Do not stop another user\'s job.'
@@ -122,7 +125,7 @@ def main():
         if (cgroup/'memory.max').is_file() and (cgroup/'memory.current').is_file():
             limit=(cgroup/'memory.max').read_text().strip()
             if limit!='max': available=min(available,int(limit)-int((cgroup/'memory.current').read_text()))
-        assert available>=450*1024**3,'Eight ranks reserve384GiB pinned host memory; prepare at least450GiB actually available RAM (prefer1TiB installed).'
+        assert available>=HARDWARE_PROFILE['minimum_available_host_memory_bytes'],'Eight ranks reserve384GiB pinned host memory; prepare at least450GiB actually available RAM (prefer1TiB installed).'
         import flash_attn
         from flash_attn import flash_attn_func
         q=torch.randn((1,16,4,64),device='cuda',dtype=torch.bfloat16,requires_grad=True)
@@ -135,7 +138,8 @@ def main():
     report={'passed':True,'metadata_only':o.metadata_only,'gpu_kernel_checked':o.gpu,'versions':versions,
             'corpus':corpus,'fixed_validation_sha256':VAL_SHA,'initial_states_verified':resets,
             'train_parquet_rows':train_rows,'checkpoint_policy':CHECKPOINT_POLICY,
-            'training_iterations':0,'optimizer_updates':0,'time':time.time()}
+            'training_iterations':0,'optimizer_updates':0,'time':time.time(),
+            'hardware_profile':HARDWARE_PROFILE,'gpu_devices':devices}
     write_json(work/'preflight/acceptance.json',report)
     print(json.dumps(report,ensure_ascii=False,indent=2))
 

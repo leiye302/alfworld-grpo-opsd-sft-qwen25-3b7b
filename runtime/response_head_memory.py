@@ -11,6 +11,7 @@ from flash_attn.bert_padding import unpad_input,index_first_axis,pad_input
 from einops import rearrange
 from verl.utils.torch_functional import logprobs_from_logits
 from managed_gradient import dense_gradient_buffer,page_head_backward_workspace
+from hardware_profile import PROFILE,storage_flags
 
 class _OriginalShapeLinearBackward(torch.autograd.Function):
     @staticmethod
@@ -65,8 +66,13 @@ def response_forward(self,micro_batch,temperature,calculate_entropy=False):
         if selected.numel()==0:
             return native(micro_batch,temperature,calculate_entropy)
         labels=torch.roll(input_ids_rmpad,shifts=-1,dims=1).squeeze(0).index_select(0,selected)
+        use_40gb_profile=os.environ.get('SDAR_GPU_STORAGE_PROFILE')==PROFILE['name']
+        if use_40gb_profile:
+            stage_model_40gb,_=storage_flags(input_ids_rmpad.numel(),0,torch.is_grad_enabled(),torch.cuda.mem_get_info()[0])
+        else:
+            stage_model_40gb=False
         stage_model_saves=torch.is_grad_enabled() and (input_ids_rmpad.numel()>=32768
-            or os.environ.get('SDAR_TEST_CPU_MODEL_SAVES')=='1')
+            or stage_model_40gb or os.environ.get('SDAR_TEST_CPU_MODEL_SAVES')=='1')
         model_storage=torch.autograd.graph.save_on_cpu(pin_memory=True) if stage_model_saves else nullcontext()
         with model_storage,original_linear_backward(self.actor_module,selected):
             output=self.actor_module(input_ids=input_ids_rmpad,attention_mask=None,
@@ -78,8 +84,12 @@ def response_forward(self,micro_batch,temperature,calculate_entropy=False):
         elif not torch.is_grad_enabled():
             logits.div_(temperature)
         del output
+        if use_40gb_profile:
+            _,stage_head_40gb=storage_flags(0,logits.numel()*logits.element_size(),torch.is_grad_enabled(),torch.cuda.mem_get_info()[0])
+        else:
+            stage_head_40gb=False
         stage_head_saves=torch.is_grad_enabled() and (logits.numel()*logits.element_size()>=1024**3
-            or os.environ.get('SDAR_TEST_CPU_HEAD_SAVES')=='1')
+            or stage_head_40gb or os.environ.get('SDAR_TEST_CPU_HEAD_SAVES')=='1')
         storage=torch.autograd.graph.save_on_cpu(pin_memory=True) if stage_head_saves else nullcontext()
         with storage:
             log_probs_selected=logprobs_from_logits(logits=logits,labels=labels,

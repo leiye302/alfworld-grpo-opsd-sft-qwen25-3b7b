@@ -63,11 +63,16 @@ def update_policy(self,data):
           'normalized_mini_batch_size':int(self.config.ppo_mini_batch_size),
           'micro_batch_size':int(self.config.ppo_micro_batch_size_per_gpu),
           'response_head_memory_adapter':os.environ.get('SDAR_RESPONSE_ONLY_LOGITS')=='1',
+          'gpu_storage_profile':os.environ.get('SDAR_GPU_STORAGE_PROFILE'),
           'teacher_gap_abs_mean':float((gap.abs()*mask).sum()/mask.sum().clamp_min(1)),
           'teacher_requires_grad':teacher.requires_grad,'old_requires_grad':old.requires_grad})
     result=native_update(self,data)
     write('update_end',{'rollout_iteration_in_process':self._audit_rollout,
-          'optimizer_steps_this_iteration':getattr(self,'_audit_optimizer_steps',0)-begin})
+          'optimizer_steps_this_iteration':getattr(self,'_audit_optimizer_steps',0)-begin,
+          'gpu_allocated_bytes':torch.cuda.memory_allocated(),
+          'gpu_reserved_bytes':torch.cuda.memory_reserved(),
+          'gpu_peak_allocated_bytes':torch.cuda.max_memory_allocated(),
+          'gpu_peak_reserved_bytes':torch.cuda.max_memory_reserved()})
     return result
 
 DataParallelPPOActor._optimizer_step=optimizer_step
