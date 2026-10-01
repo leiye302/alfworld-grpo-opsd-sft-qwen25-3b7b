@@ -11,7 +11,7 @@
 
 **OPSD固定系数0.01；SFT初始系数0.1，按外层轮数余弦衰减，第50轮归零；活跃轮每轮全局抽16条专家轨迹，监督有效输出token的全局token-mean。** 两组均保留Reference KL、奖励处理、动作有效性惩罚和原生mini-batch更新。不是先前修改过的带符号OPSD，也不是OPSD增长/SFT下降的互补日程。方法公式和实现边界见[docs/METHOD.md](docs/METHOD.md)。
 
-固定验证使用已有的**128个valid_seen任务**，包括初始状态、环境种子和每个任务每个决策的生成种子。训练前验证一次，随后每10轮验证；每25轮保存完整可续训检查点，150轮结束。四组不共享训练后的权重。
+固定验证使用已有的**128个valid_seen任务**，包括初始状态、环境种子和每个任务每个决策的生成种子。训练前验证一次，随后每10轮验证；每50轮保存完整可续训检查点，150轮结束。**第100轮保存并验收后删50轮，第150轮保存并验收后删100轮，最终每组只留150轮。** 四组不共享训练后的权重。
 
 ## 给接手AI的执行指令
 
@@ -24,7 +24,7 @@
 - Linux x86_64、Python3.12，建议Ubuntu22.04；具备`git`、`g++`、Python venv、正常NVIDIA驱动和CUDA12.8运行能力。
 - 单机**8×A10080GB**均已分配给本实验；发现其它用户的计算进程时先等待，禁止停掉别人任务。
 - 建议1TiB主机内存，开训检查要求至少450GiB空闲内存。冻结的内存适配器每rank预留48GiB固定页主机内存，八rank合计384GiB。不要擅自删掉适配器或改状态精度以绕过检查。
-- 若保留四组全部25/50/75/100/125/150检查点，建议**至少2TB空闲磁盘**，并持续监测空间。3B/7B完整检查点远大于BF16基模文件；不只是下载约20多GB权重的空间。
+- 按当前保留规则，四组最终完整检查点合计约260GB；新旧检查点交替时约350GB峰值，另需基模、环境、日志与缓存空间。建议**至少500GB空闲磁盘，600GB更宽裕**，并持续监测空间。只能在新检查点完整保存后删除旧的，不能只按最终容量准备磁盘。
 - 使用较短的工作目录，例如`/data/alfwork`，避免Ray本地socket路径超长。所有缓存/日志/临时文件和结果都放在指定工作目录。
 
 ## 2. 拉仓库、安装冻结环境
@@ -82,7 +82,9 @@ mkdir -p /data/alfwork
 nohup python -u scripts/handoff.py run-all --work /data/alfwork > /data/alfwork/queue.log 2>&1 < /dev/null &
 ```
 
-队列顺序：3B baseline→3B方法→7B baseline→7B方法。每组150轮，检查点25轮一次，固定验证10轮一次。主机不关机、不停止进程即可独立运行；合上接手者的电脑不影响远端训练。
+队列顺序：3B baseline→3B方法→7B baseline→7B方法。每组150轮，检查点50轮一次，固定验证10轮一次。检查点保留为50→100→150：新检查点验收成功才清理上一份；未通过时保留旧检查点并报错。主机不关机、不停止进程即可独立运行；合上接手者的电脑不影响远端训练。
+
+已拉过旧版仓库的接手者，需要先`git pull --ff-only`再启动。正在运行的训练进程不会自动采用新的保存规则；不要运行中替换源码，需要停止后按完整检查点续跑才生效。`configs/{3b,7b}_{baseline,sft}.json`是Linux示例路径，实际生效路径以`handoff.py plan --work ...`输出为准。
 
 只启动一组：
 
@@ -115,10 +117,11 @@ nohup python -u scripts/handoff.py run-all --work /data/alfwork --resume > /data
 - `logs/metrics.jsonl`：reward及其标准差、轨迹成功率、entropy、response length、梯度范数、KL、OPSD和SFT loss/coefficient等训练器原生指标。
 - `logs/actor_audit_rank*.jsonl`：各rank实际mini/microbatch、每轮optimizer.step次数、FP32参数/Adam、早期实际参数更新与Teacher detach证据。
 - `fixed_validation/results/iteration_*.json`及`.jsonl.gz`：每次固定128任务的成功数、分项指标和真实轨迹。
-- `checkpoints/global_step_{25,50,75,100,125,150}`：原生完整FSDP分片/优化器/调度器/随机状态；不能只交一份合并HF权重作为续训备份。
+- `checkpoints/global_step_{50,100,150}`：每50轮保存的原生完整FSDP分片/优化器/调度器/随机状态；新的一份验收后删除上一份，结束时只有`global_step_150`。不能只交一份合并HF权重作为续训备份。
+- `logs/checkpoint_retention.jsonl`：各次完整保存验收、旧检查点清理及失败恢复标记的合并记录。
 - `checkpoints/expert_action_sft_sampling`：SFT抽样身份和监督分母证据，后50轮不会继续生成SFT批次。
 
-第一轮跨至少两次mini-batch更新后检查FP32小更新、optimizer.step次数及权重同步；不能只看初始化时的probability ratio=1。每次保存后检查各rank完整，按当前硬件实测磁盘增长量规划；不自动删除检查点，也不创建海量逐token文件。原始结果尽量按轮压缩/合并。
+第一轮跨至少两次mini-batch更新后检查FP32小更新、optimizer.step次数及权重同步；不能只看初始化时的probability ratio=1。每次保存后检查八rank的模型/Adam/随机状态、数据状态、tokenizer和最新轮数标记。原生保存返回且状态归档结构通过后，只删除本组被替代的50／100轮目录；保存失败不删旧检查点，并恢复上一份有效检查点的续跑标记。这个结构检查不替代加载模型的内容验收。不创建海量逐token文件，原始结果尽量按轮压缩/合并。
 
 四组结束后：
 

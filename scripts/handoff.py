@@ -4,6 +4,8 @@ from pathlib import Path
 import argparse, contextlib, hashlib, json, os, platform, shutil, subprocess, sys, sysconfig, tarfile, time, urllib.error, urllib.parse, urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'runtime'))
+from checkpoint_retention import POLICY as CHECKPOINT_POLICY, verify_checkpoint
 OWNER, NAME = 'leiye302', 'alfworld-grpo-opsd-sft-qwen25-3b7b'
 DATA_SHA = '3aa3796f8d07a3d8fc091c969281b9e22ae2249935038af575545b0d87a623b7'
 MANIFEST_SHA = 'e080ddeac481c19c1e76a000d3a87ee1509a719737869274ecbe9d221d01100b'
@@ -73,7 +75,8 @@ def environment(work, run):
     work, run = Path(work).resolve(), Path(run).resolve()
     env = os.environ.copy()
     env.update(SDAR_RUN_ROOT=str(run), SDAR_BASE_ROOT=str(work/'assets_bundle'),SDAR_QUOTA_BASE=str(run.parent),
-        SDAR_RESPONSE_ONLY_LOGITS='1', SDAR_ALFWORLD_SQLITE=str(work/'assets_bundle/assets/alfworld.sqlite'),
+        SDAR_RESPONSE_ONLY_LOGITS='1', SDAR_CHECKPOINT_RETENTION_LAST_ONLY='1',
+        SDAR_ALFWORLD_SQLITE=str(work/'assets_bundle/assets/alfworld.sqlite'),
         ALFWORLD_DATA=LOGICAL_ALFWORLD, FULLTRAJ_FIXED_VALIDATION='1',
         PYTHONPATH=os.pathsep.join(map(str,[run,ROOT/'framework',ROOT/'runtime',work/'assets_bundle/vendor/deps',work/'assets_bundle/vendor/restored_deps'])),
         PYTHONDONTWRITEBYTECODE='1', PYTHONNOUSERSITE='1', TOKENIZERS_PARALLELISM='false',
@@ -110,6 +113,7 @@ def arguments(work, run, size, method, resume=False):
       'actor_rollout_ref.model.path':str(work/'models'/('Qwen2.5-'+size.upper()+'-Instruct')),
       'trainer.experiment_name':size+'_'+method+'_150_fixed128',
       'trainer.n_gpus_per_node':'8','ray_init.num_gpus':'8','trainer.total_epochs':'150',
+      'trainer.save_freq':'50',
       'trainer.default_local_dir':str(run/'checkpoints'),'trainer.rollout_data_dir':str(run/'rollouts'),
       'trainer.validation_data_dir':str(run/'validation'),'ray_init._temp_dir':str(run/'ray'),
       'ray_init._plasma_directory':str(run/'tmp'),'trainer.resume_mode':'auto' if resume else 'disable',
@@ -168,7 +172,7 @@ def run_one(work, size, method, resume):
     except (OSError,subprocess.CalledProcessError): commit='source-archive'
     identity={'repository_commit':commit,'model':json.loads((ROOT/'configs/models.lock.json').read_text())[size],
         'method':method,'outer_iterations':150,'gpus':8,'expert_sha256':DATA_SHA,'expert_manifest_sha256':MANIFEST_SHA,
-        'fixed_validation_sha256':VAL_SHA,'resume':resume}
+        'fixed_validation_sha256':VAL_SHA,'resume':resume,'checkpoint_policy':CHECKPOINT_POLICY}
     write_json(run/'reports/identity.json',identity)
     entry=run/'train_entry.py'
     entry.write_text("import json,os,runpy,sys\nfrom pathlib import Path\nimport ray\nfrom storage_guard import for_run\nr=Path(os.environ['SDAR_RUN_ROOT'])\nfor_run().initialize()\nsys.argv=[str(r/'train_entry.py')]+json.loads((r/'reports/launch_args.json').read_text())\ntry: runpy.run_module('verl.trainer.main_sdar',run_name='__main__')\nfinally:\n if ray.is_initialized(): ray.shutdown()\n")
@@ -186,13 +190,10 @@ def run_one(work, size, method, resume):
     rows=[json.loads(x) for x in metrics.read_text().splitlines() if x.strip()]
     steps=[int(x.get('step',x.get('global_steps',-1))) for x in rows]
     if max(steps,default=-1)<150: raise RuntimeError('Process exited before iteration150; native checkpoint is retained.')
-    for iteration in range(25,151,25):
-        checkpoint=run/'checkpoints'/f'global_step_{iteration}'
-        expected=[checkpoint/'data.pt']+[checkpoint/'actor'/f'{kind}_world_size_8_rank_{rank}.pt'
-            for kind in ('model','optim','extra_state') for rank in range(8)]
-        if not all(p.is_file() and p.stat().st_size>0 for p in expected):
-            raise RuntimeError('Missing or empty native checkpoint state at '+str(iteration)+'; do not mark complete.')
-    assert (run/'checkpoints/latest_checkpointed_iteration.txt').read_text().strip()=='150'
+    verify_checkpoint(run,150)
+    for retired in (50,100):
+        if (run/'checkpoints'/f'global_step_{retired}').exists():
+            raise RuntimeError('Superseded checkpoint still exists at '+str(retired)+'; inspect checkpoint_retention.jsonl.')
     write_json(run/'COMPLETE.json',dict(identity,completed_at=time.time(),latest_logged_iteration=max(steps),validation_files=len(evaluations)))
     print('Completed '+run.name,flush=True)
 

@@ -15,5 +15,17 @@
   "GitHub_release_digest_matches_source": true,
   "bootstrap_source_matched_dependency_resolution_passed": true,
   "bootstrap_packages": 170,
-  "portable_IO_scope_tested": true
+  "portable_IO_scope_tested": true,
+  "checkpoint_retention_policy": {
+    "save_every": 50,
+    "iterations": [
+      50,
+      100,
+      150
+    ],
+    "keep": "latest_complete",
+    "delete_previous_only_after_verified_save": true
+  },
+  "checkpoint_retention_linux_checks_passed": true,
+  "checkpoint_retention_acceptance_file": "evidence/checkpoint_retention_acceptance.json"
 }

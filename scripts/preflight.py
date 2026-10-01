@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from handoff import DATA_SHA,MANIFEST_SHA,VAL_SHA,digest,write_json,arguments
+from handoff import DATA_SHA,MANIFEST_SHA,VAL_SHA,CHECKPOINT_POLICY,digest,write_json,arguments
 
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--work',type=Path,required=True);p.add_argument('--gpu',action='store_true')
@@ -41,7 +41,13 @@ def main():
         assert cfg.actor_rollout_ref.actor.ppo_mini_batch_size==256
         assert cfg.actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu==32
         assert cfg.actor_rollout_ref.rollout.temperature==1 and cfg.actor_rollout_ref.actor.ppo_epochs==1
-        assert cfg.trainer.total_epochs==150 and cfg.trainer.save_freq==25 and cfg.trainer.test_freq==10
+        assert cfg.trainer.total_epochs==150 and cfg.trainer.save_freq==50 and cfg.trainer.test_freq==10
+        assert baseline.trainer.save_freq==50
+        for profile in (cfg,baseline):
+            assert profile.trainer.max_actor_ckpt_to_keep is None
+            assert profile.trainer.max_critic_ckpt_to_keep is None
+            assert not profile.trainer.get('remove_previous_ckpt_in_save',False)
+        assert os.environ.get('SDAR_CHECKPOINT_RETENTION_LAST_ONLY')=='1'
         assert not baseline.actor_rollout_ref.actor.expert_action_sft.enabled
         assert cfg.algorithm.sdar.gate_beta==0 and cfg.algorithm.sdar.sdar_coef==.01
         options=cfg.actor_rollout_ref.actor.expert_action_sft
@@ -128,7 +134,8 @@ def main():
         assert not torch.cuda.is_initialized(),'CPU corpus audit unexpectedly used a GPU'
     report={'passed':True,'metadata_only':o.metadata_only,'gpu_kernel_checked':o.gpu,'versions':versions,
             'corpus':corpus,'fixed_validation_sha256':VAL_SHA,'initial_states_verified':resets,
-            'train_parquet_rows':train_rows,'training_iterations':0,'optimizer_updates':0,'time':time.time()}
+            'train_parquet_rows':train_rows,'checkpoint_policy':CHECKPOINT_POLICY,
+            'training_iterations':0,'optimizer_updates':0,'time':time.time()}
     write_json(work/'preflight/acceptance.json',report)
     print(json.dumps(report,ensure_ascii=False,indent=2))
 

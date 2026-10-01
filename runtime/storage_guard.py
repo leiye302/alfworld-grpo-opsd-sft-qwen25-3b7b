@@ -92,7 +92,17 @@ def install_trainer_hooks(module):
         # Native checkpoint timing, content, collectives and completion marker
         # stay intact. Never retry a distributed checkpoint after partial failure.
         for_run().maintain(minimum=256)
-        return native_save(self,*args,**kwargs)
+        try:
+            result=native_save(self,*args,**kwargs)
+        except Exception:
+            if os.environ.get('SDAR_CHECKPOINT_RETENTION_LAST_ONLY')=='1':
+                from checkpoint_retention import restore_previous_marker
+                restore_previous_marker(os.environ['SDAR_RUN_ROOT'],int(self.global_steps))
+            raise
+        if os.environ.get('SDAR_CHECKPOINT_RETENTION_LAST_ONLY')=='1':
+            from checkpoint_retention import after_native_save
+            after_native_save(os.environ['SDAR_RUN_ROOT'],int(self.global_steps))
+        return result
 
     cls._dump_generations=dump
     cls._save_checkpoint=save
