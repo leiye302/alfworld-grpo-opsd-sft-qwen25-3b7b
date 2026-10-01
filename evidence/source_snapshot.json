@@ -20,10 +20,6 @@
       "sha256": "a9268c214eebe7016a3a56601b6a230dd0daaed2530ae1614828d8fed546adf0"
     },
     {
-      "path": "framework/.vscode/settings.json",
-      "sha256": "43d4fe5cc0ffc39148f78af066170100f0c0f3c48a56cfb42556aecab171ccd3"
-    },
-    {
       "path": "framework/agent_system/environments/__init__.py",
       "sha256": "c28133ffad5b6b4093919d66f002f87195f1605f6ea41666dd0a2c30762a722f"
     },
@@ -3432,38 +3428,6 @@
       "sha256": "8e3fa692abe21407be75b463f8b5617f43e490281fac124e2f2eacb410380d87"
     },
     {
-      "path": "framework/outputs/2026-09-28/16-15-51/.hydra/config.yaml",
-      "sha256": "2809a99c9b241a4dd6869e693db4c479849f7897b19d3d25c80ec68ad04b0641"
-    },
-    {
-      "path": "framework/outputs/2026-09-28/16-15-51/.hydra/hydra.yaml",
-      "sha256": "0faa93b4c34fba1f98b5e09814f41ebdf9012800cc7a0fa6ea008de41a0b6dbc"
-    },
-    {
-      "path": "framework/outputs/2026-09-28/16-15-51/.hydra/overrides.yaml",
-      "sha256": "cff52ef084feb628488e299071a8ae9c1fa97c8756d58f86314bf2a2a3c697da"
-    },
-    {
-      "path": "framework/outputs/2026-09-28/16-15-51/main_sdar.log",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    {
-      "path": "framework/outputs/2026-09-28/21-38-17/.hydra/config.yaml",
-      "sha256": "2809a99c9b241a4dd6869e693db4c479849f7897b19d3d25c80ec68ad04b0641"
-    },
-    {
-      "path": "framework/outputs/2026-09-28/21-38-17/.hydra/hydra.yaml",
-      "sha256": "65e673d39d38219ba94491f1830b463502f6c04d7fdda18a969b9b89fdc3b155"
-    },
-    {
-      "path": "framework/outputs/2026-09-28/21-38-17/.hydra/overrides.yaml",
-      "sha256": "cff52ef084feb628488e299071a8ae9c1fa97c8756d58f86314bf2a2a3c697da"
-    },
-    {
-      "path": "framework/outputs/2026-09-28/21-38-17/main_sdar.log",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    {
       "path": "framework/pyproject.toml",
       "sha256": "dfa3136633654e79b600c6c36c619925bffcd25ec63bbd8e05b1f7801f4e3ae4"
     },
@@ -3914,18 +3878,6 @@
     {
       "path": "framework/tests/e2e/__init__.py",
       "sha256": "2cb01612b76f54f69f894162dbf6a0c60267cc4125d29f89d0479b62089acf49"
-    },
-    {
-      "path": "framework/tests/e2e/arithmetic_sequence/data/create_dataset.py",
-      "sha256": "84f8cd08ebb94a0cb5af9cbc0e2c902ad0cdd927fae00db10755f8ed477c08e0"
-    },
-    {
-      "path": "framework/tests/e2e/arithmetic_sequence/data/test.parquet",
-      "sha256": "301162dbc60e495c67bff064c52251238be217102a0f5ae5ae0082560faa06b8"
-    },
-    {
-      "path": "framework/tests/e2e/arithmetic_sequence/data/train.parquet",
-      "sha256": "81c6b6c0ab555f3212a425c17b20ffb1224e5a53523fc84dc760a62007773b1b"
     },
     {
       "path": "framework/tests/e2e/arithmetic_sequence/model/config.json",
@@ -5317,5 +5269,5 @@
     }
   ],
   "hardware_patch": "hardware_patch.json",
-  "excluded": "model weights, checkpoints, generated caches, CI jobs"
+  "excluded": "model weights, checkpoints, generated caches, CI jobs; generated run outputs, editor settings and unrelated arithmetic data fixtures"
 }

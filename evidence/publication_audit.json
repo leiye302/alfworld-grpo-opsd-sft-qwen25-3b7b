@@ -1,7 +1,7 @@
 {
   "passed": true,
-  "files": 1373,
-  "bytes": 69143700,
+  "files": 1361,
+  "bytes": 69076876,
   "largest_file_bytes": 16636712,
   "no_model_weights_or_checkpoints": true,
   "secret_pattern_scan_passed": true,
