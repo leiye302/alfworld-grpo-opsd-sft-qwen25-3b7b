@@ -15,29 +15,29 @@
 
 任务已经授权为上述两个SFT方法组训练。先读本README和METHOD，准备环境/下载资产，完成检查，然后启动两组队列。**仅运行`3b_sft`和`7b_sft`，不启动baseline。** 不要修改方法、全局batch、采样/验证协议、损失归一化或训练预算；不要使用之前1.5B实验的checkpoint初始化3B/7B。不要把OPSD换成另一个版本。只下载本仓库Release的指定资产和下文两个锁定基模，不下载来源服务器的其它内容，不需要公司服务器登录权限或任何外置模型API密钥。
 
-两组默认**依次**使用全部8张卡：`3b_sft → 7b_sft`。接手者自己的GitHub账号需先被仓库所有者邀请为协作者并接受邀请。本仓库继续保持私有；网页访问、代码拉取和Release下载都需要该账号授权。训练服务器先用`gh auth login`登录自己的账号，再执行下文命令。也可安全设置自己的`GH_TOKEN`；不要把token写入代码、文档、命令行日志或Git提交。
+两组默认**依次**使用全部8张卡：`3b_sft → 7b_sft`。**本仓库和指定Release已公开，接手者不需要GitHub账号、协作者邀请、GitHub CLI、登录或token。** 直接用HTTPS拉取代码，下载工具匿名获取Release。训练服务器的SSH登录仍使用接手者已有的服务器密钥，和GitHub访问是两回事。
 
 ## 1. 机器准备
 
-- Linux x86_64、Python3.12，建议Ubuntu22.04；具备`git`、`g++`、Python venv、正常NVIDIA驱动和CUDA12.8运行能力。
+- Linux x86_64、Python3.12，建议Ubuntu22.04；具备`git`、`tmux`、`g++`、Python venv、正常NVIDIA驱动和CUDA12.8运行能力。
 - 单机**8×A10080GB**均已分配给本实验；发现其它用户的计算进程时先等待，禁止停掉别人任务。
 - 建议1TiB主机内存，开训检查要求至少450GiB空闲内存。冻结的内存适配器每rank预留48GiB固定页主机内存，八rank合计384GiB。不要擅自删掉适配器或改状态精度以绕过检查。
 - 按当前保留规则，两组最终完整检查点合计约130GB；新旧检查点交替时约220GB峰值，另需约21GB基模、环境、日志与缓存空间。建议**至少350GB空闲磁盘，预留400～500GB更宽裕**，并持续监测空间。只能在新检查点完整保存后删除旧的，不能只按最终容量准备磁盘。容量估算见第8节。
-- 使用较短的工作目录，例如`/data/alfwork`，避免Ray本地socket路径超长。所有缓存/日志/临时文件和结果都放在指定工作目录。
+- 先确认真实数据盘挂载点，在其中使用较短的工作目录，例如`/data/alfwork`，避免Ray本地socket路径超长。以下`/data/alfwork`是示例；若数据盘不挂载在`/data`，统一替换为实际数据盘路径。代码、环境、模型、缓存、日志、临时文件和结果都放在该项目目录内。
 
 ## 2. 拉仓库、安装冻结环境
 
-已有GitHub CLI可直接：
+在训练服务器上执行，不需要GitHub认证：
 
 ```bash
-gh auth login
-gh repo clone leiye302/alfworld-grpo-opsd-sft-qwen25-3b7b
-cd alfworld-grpo-opsd-sft-qwen25-3b7b
+mkdir -p /data/alfwork
+git clone https://github.com/leiye302/alfworld-grpo-opsd-sft-qwen25-3b7b.git /data/alfwork/repo
+cd /data/alfwork/repo
 bash scripts/bootstrap.sh
 source .venv/bin/activate
 ```
 
-也可用配置好认证的`git clone https://github.com/leiye302/alfworld-grpo-opsd-sft-qwen25-3b7b.git`。Python3.12可执行文件不是`python3.12`时，用`PYTHON312=/实际路径/python bash scripts/bootstrap.sh`。
+Python3.12可执行文件不是`python3.12`时，用`PYTHON312=/实际路径/python bash scripts/bootstrap.sh`。拉取或下载返回404时先检查URL和网络，不要索要仓库所有者的密码或token。
 
 bootstrap只建立本仓库独立环境，使用已通过Linux/Python3.12依赖解析的版本约束。运行时还会优先使用Release中的冻结模块快照，关键版本包括PyTorch2.8.0+cu128、vLLM0.11.0、Transformers4.57.3、Ray2.50.0、ALFWorld0.4.2、TextWorld1.6.2、FlashAttention2.7.4.post1。**不要执行上游的`pip install -r framework/requirements.txt`，不要升级整套依赖**，它不是这次实验的已选环境。
 
@@ -76,11 +76,11 @@ python scripts/handoff.py check --work /data/alfwork --gpu
 ## 5. 启动两个SFT方法组，各150轮
 
 ```bash
-mkdir -p /data/alfwork
-nohup python -u scripts/handoff.py run-all --work /data/alfwork > /data/alfwork/queue.log 2>&1 < /dev/null &
+tmux new-session -d -s alfworld-sft -c /data/alfwork/repo \
+  '/data/alfwork/repo/.venv/bin/python -u scripts/handoff.py run-all --work /data/alfwork > /data/alfwork/queue.log 2>&1'
 ```
 
-`run-all`和`plan`的默认组别均为`3b_sft → 7b_sft`，不会启动baseline。每组150轮，检查点50轮一次，固定验证10轮一次。检查点保留为50→100→150：新检查点验收成功才清理上一份；未通过时保留旧检查点并报错。主机不关机、不停止进程即可独立运行；合上接手者的电脑不影响远端训练。
+`run-all`和`plan`的默认组别均为`3b_sft → 7b_sft`，不会启动baseline。每组150轮，检查点50轮一次，固定验证10轮一次。检查点保留为50→100→150：新检查点验收成功才清理上一份；未通过时保留旧检查点并报错。主机不关机、不停止进程即可独立运行；合上接手者的电脑不影响远端训练。用`tmux ls`检查会话、`tail -n 40 /data/alfwork/queue.log`查看队列日志；实际训练日志在对应run的`logs/driver.log`，不能只看到tmux创建成功就报告训练已经正常。
 
 已拉过旧版仓库的接手者，需要先`git pull --ff-only`再启动。正在运行的训练进程不会自动采用新的保存规则；不要运行中替换源码，需要停止后按完整检查点续跑才生效。`configs/{3b,7b}_{baseline,sft}.json`是Linux示例路径，实际生效路径以`handoff.py plan --work ...`输出为准。
 
@@ -98,7 +98,8 @@ python -u scripts/handoff.py run --work /data/alfwork --size 7b --method sft
 确认原队列已经退出后：
 
 ```bash
-nohup python -u scripts/handoff.py run-all --work /data/alfwork --resume > /data/alfwork/queue_resume.log 2>&1 < /dev/null &
+tmux new-session -d -s alfworld-sft-resume -c /data/alfwork/repo \
+  '/data/alfwork/repo/.venv/bin/python -u scripts/handoff.py run-all --work /data/alfwork --resume > /data/alfwork/queue_resume.log 2>&1'
 ```
 
 自动跳过完整结束的组，其余使用原生完整FSDP checkpoint恢复Actor、Adam、学习率、dataloader/RNG和外层计数。从最近保存的完整轮次继续到总计150，不另加150轮。没有完整检查点时原生逻辑会重新从基模开始；不要把中途半写目录当可恢复状态。新跑默认拒绝覆盖已有实验目录。

@@ -26,31 +26,15 @@ def write_json(path, obj):
     temp = path.with_suffix('.tmp'); temp.write_text(json.dumps(obj, ensure_ascii=False, indent=2)+'\n')
     temp.replace(path)
 
-def credentials():
-    for name in ('GH_TOKEN','GITHUB_TOKEN'):
-        if os.environ.get(name): return os.environ[name]
-    try:
-        return subprocess.check_output(['gh','auth','token'], text=True, stderr=subprocess.DEVNULL).strip()
-    except (OSError, subprocess.CalledProcessError):
-        raise RuntimeError('Private repository assets require GH_TOKEN or gh auth login; use your own authorized GitHub account.') from None
-
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl): return None
-
 def download_asset(asset, path):
     if path.exists() and digest(path) == asset['sha256']: return
-    req = urllib.request.Request(asset['api_url'], headers={'Authorization':'Bearer '+credentials(),
-        'Accept':'application/octet-stream','User-Agent':'alfworld-repro-handoff'})
-    # Bearer credentials are sent only to api.github.com. The signed redirect is
-    # fetched in a separate request with no Authorization header.
-    assert asset['api_url'].startswith('https://api.github.com/repos/'+OWNER+'/'+NAME+'/releases/assets/')
-    try:
-        response = urllib.request.build_opener(NoRedirect()).open(req, timeout=90)
-    except urllib.error.HTTPError as e:
-        if e.code not in (301,302,303,307,308): raise
-        target = e.headers['Location']; host = urllib.parse.urlparse(target).hostname or ''
-        assert target.startswith('https://') and (host.endswith('.githubusercontent.com') or host.endswith('.github.com'))
-        response = urllib.request.urlopen(urllib.request.Request(target,headers={'User-Agent':'alfworld-repro-handoff'}),timeout=90)
+    # Public Release downloads do not require a GitHub account, gh, or a token.
+    # No Authorization header is sent to GitHub or its asset redirect hosts.
+    url = asset['browser_download_url']
+    assert url.startswith('https://github.com/'+OWNER+'/'+NAME+'/releases/download/')
+    req = urllib.request.Request(url, headers={'Accept':'application/octet-stream',
+        'User-Agent':'alfworld-repro-handoff'})
+    response = urllib.request.urlopen(req, timeout=90)
     partial = path.with_suffix(path.suffix+'.partial')
     with response, partial.open('wb') as f:
         shutil.copyfileobj(response,f,8*1024*1024)
