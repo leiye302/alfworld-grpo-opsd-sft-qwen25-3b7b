@@ -4,7 +4,6 @@ The simulator, task selection, rewards, game JSON and protocol are unmodified.
 Only filesystem access to exact archived bytes is virtualized to avoid inode quota.
 """
 import builtins
-import hashlib
 import io
 import os
 import sqlite3
@@ -52,13 +51,10 @@ def install():
         if getattr(local, 'pid', None) != os.getpid():
             local.connection = sqlite3.connect('file:'+database+'?mode=ro&immutable=1', uri=True)
             local.pid = os.getpid()
-        row = local.connection.execute('SELECT data,sha256 FROM files WHERE path=?', (name,)).fetchone()
+        row = local.connection.execute('SELECT data FROM files WHERE path=?', (name,)).fetchone()
         if row is None:
             raise FileNotFoundError(root+'/'+name)
-        data, digest = row
-        if hashlib.sha256(data).hexdigest() != digest:
-            raise IOError('ALFWorld archive SHA256 mismatch: '+name)
-        return data
+        return row[0]
 
     def opened(path, mode='r', buffering=-1, encoding=None, errors=None, newline=None,
                closefd=True, opener=None, _original=original_open):

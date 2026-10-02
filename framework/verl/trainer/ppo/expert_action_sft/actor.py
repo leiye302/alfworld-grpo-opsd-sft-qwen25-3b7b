@@ -71,13 +71,11 @@ def validate_payload(payload, options):
                             or [r.get("source_step") for r in selected] != step_indices):
                         raise ValueError("Mixed selected sample identities/original steps mismatch")
                     source = draw.get("source_episode_id")
-                    kind, digest = draw.get("source_kind"), draw.get("source_episode_sha256")
+                    kind = draw.get("source_kind")
                     if (not isinstance(source, str) or not source or kind not in ("legacy_complete", "real_closedloop")
                             or eid != ("legacy:" if kind == "legacy_complete" else "closedloop:") + source
-                            or not isinstance(digest, str) or len(digest) != 64
-                            or any(c not in "0123456789abcdef" for c in digest)
                             or any(r.get("episode_id") != eid or r.get("source_episode_id") != source
-                                   or r.get("source_kind") != kind or r.get("source_episode_sha256") != digest for r in selected)):
+                                   or r.get("source_kind") != kind for r in selected)):
                         raise ValueError("Mixed complete source trajectory identity mismatch")
                     if kind == "legacy_complete" and step_indices != list(range(total_decisions)):
                         raise ValueError("Legacy complete draw cannot drop source decisions")

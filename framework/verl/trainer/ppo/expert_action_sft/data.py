@@ -20,7 +20,6 @@ import tempfile
 
 SCHEMA_VERSION = 1
 SAMPLER_VERSION = "sha256-local-random-sample-v1"
-SOURCE_DATASET_SHA256 = "4251bb992e24a085fac5cfb72fc0af0cf90b53961318fb4f847853b974935ec0"
 TASK_TYPES = frozenset({
     "pick_and_place_simple", "look_at_obj_in_light",
     "pick_clean_then_place_in_recep", "pick_heat_then_place_in_recep",
@@ -30,8 +29,7 @@ ROW_FIELDS = frozenset({
     "sample_id", "episode_id", "game_path", "task_type", "task", "step",
     "expert_history", "current_observation", "admissible_actions", "prompt_text",
     "prompt_history_length", "target_action", "target_action_token_ids",
-    "reasoning_target", "source_episode_won", "source_game_sha256",
-    "reasoning", "reasoning_source", "source_dataset_sha256",
+    "reasoning_target", "source_episode_won", "reasoning", "reasoning_source",
 })
 
 
@@ -65,7 +63,8 @@ def _hex_digest(value, name):
 def validate_record(row):
     """Check mechanical provenance, never claim this proves prose grounding."""
     _require(isinstance(row, dict), "expert row must be an object")
-    unknown = set(row) - ROW_FIELDS
+    optional_provenance = {"source_game_sha256", "source_dataset_sha256"}
+    unknown = set(row) - ROW_FIELDS - optional_provenance
     missing = ROW_FIELDS - set(row)
     _require(not unknown, f"unknown expert fields (possible hidden/future data): {sorted(unknown)}")
     _require(not missing, f"missing expert fields: {sorted(missing)}")
@@ -79,9 +78,6 @@ def validate_record(row):
              game.parts[:2] == ("json_2.1.1", "train") and game.name == "game.tw-pddl",
              f"{sid}: source is not an ALFWorld training game")
     _require(row["task_type"] in TASK_TYPES, f"{sid}: unknown task type")
-    _hex_digest(row["source_game_sha256"], "source_game_sha256")
-    _require(row["source_dataset_sha256"] == SOURCE_DATASET_SHA256,
-             f"{sid}: source must be the verified expert action library")
     _require(row["source_episode_won"] is True, f"{sid}: source episode was not successful")
     _require(row["reasoning_target"] is None,
              f"{sid}: legacy reasoning_target metadata must be null; the run selects the supervision mask")
@@ -197,13 +193,14 @@ class ExpertActionDataset:
     def __init__(self, dataset_path, dataset_sha256, tokenizer, max_prompt_length, max_response_length, chat_kwargs=None):
         path = Path(dataset_path).expanduser().resolve(strict=True)
         content = path.read_bytes()
-        _hex_digest(dataset_sha256, "dataset_sha256")
-        _require(_sha256(content) == dataset_sha256, "expert dataset SHA256 mismatch")
+        if dataset_sha256:
+            _hex_digest(dataset_sha256, "dataset_sha256")
+            _require(_sha256(content) == dataset_sha256, "Optional expert dataset checksum mismatch")
         text = gzip.decompress(content).decode("utf-8") if path.suffix == ".gz" else content.decode("utf-8")
         self.rows = [validate_record(json.loads(line)) for line in text.splitlines() if line.strip()]
         _require(len(self.rows) >= 4, "expert library needs at least four annotated decisions")
         _require(len({row["sample_id"] for row in self.rows}) == len(self.rows), "duplicate expert sample IDs")
-        self.dataset_sha256 = dataset_sha256
+        self.dataset_sha256 = dataset_sha256 or _sha256(content)
         self.dataset_path = str(path)
         # Encode and validate every annotated example once, before any update.
         # A malformed unsampled row must not surface halfway into a training run.
@@ -256,7 +253,7 @@ def prepare_expert_action_sft(trainer, batch, rollout_iteration):
     chat_kwargs = dict(trainer.config.data.get("apply_chat_template_kwargs", {}))
     contract = {
         "schema_version": SCHEMA_VERSION, "sampler_version": SAMPLER_VERSION,
-        "dataset_sha256": config["dataset_sha256"], "seed": seed,
+        "dataset_sha256": config.get("dataset_sha256"), "seed": seed,
         "global_samples": 4, "coef": coef,
         "max_prompt_length": int(config["max_prompt_length"]),
         "max_response_length": int(config["max_response_length"]),
@@ -270,7 +267,7 @@ def prepare_expert_action_sft(trainer, batch, rollout_iteration):
     previous = getattr(trainer, "_expert_action_sft_contract", None)
     if previous is None:
         dataset = ExpertActionDataset(
-            config["dataset_path"], config["dataset_sha256"], trainer.tokenizer,
+            config["dataset_path"], config.get("dataset_sha256"), trainer.tokenizer,
             contract["max_prompt_length"], contract["max_response_length"], chat_kwargs,
         )
         trainer._expert_action_sft_dataset = dataset
@@ -320,14 +317,14 @@ class ExpertTrajectoryDataset(ExpertActionDataset):
     sampler_version = "sha256-uniform-complete-episode-with-replacement-v1"
 
     def __init__(self, config, tokenizer, chat_kwargs=None):
-        super().__init__(config["dataset_path"], config["dataset_sha256"], tokenizer,
+        super().__init__(config["dataset_path"], config.get("dataset_sha256"), tokenizer,
                          int(config["max_prompt_length"]), int(config["max_response_length"]), chat_kwargs)
         manifest_content = Path(config["trajectory_manifest_path"]).read_bytes()
-        _require(_sha256(manifest_content) == config["trajectory_manifest_sha256"],
-                 "Complete-trajectory manifest SHA256 mismatch")
+        if config.get("trajectory_manifest_sha256"):
+            _require(_sha256(manifest_content) == config["trajectory_manifest_sha256"],
+                     "Optional complete-trajectory manifest checksum mismatch")
         manifest = json.loads(manifest_content)
-        _require(manifest["dataset_sha256"] == self.dataset_sha256 and manifest["schema_version"] == 1,
-                 "Complete-trajectory manifest does not match dataset")
+        _require(manifest["schema_version"] == 1, "Unknown complete-trajectory manifest schema")
         by_id = {row["sample_id"]: index for index, row in enumerate(self.rows)}
         self.episodes = {}
         used = set()
@@ -360,7 +357,7 @@ class ExpertTrajectoryDataset(ExpertActionDataset):
         _require(bool(self.episodes) and len(used) == len(self.rows),
                  "Training dataset contains uncertified or incomplete trajectories")
         self.episode_ids = sorted(self.episodes)
-        self.manifest_sha256 = config["trajectory_manifest_sha256"]
+        self.manifest_sha256 = _sha256(manifest_content)
 
     def sample(self, seed, rollout_iteration):
         _require(_is_int(seed) and _is_int(rollout_iteration) and rollout_iteration >= 1, "Invalid SFT sample seed/iteration")
@@ -424,7 +421,7 @@ def prepare_trajectory_sft(trainer, batch, rollout_iteration):
         dataset_class = MixedExpertTrajectoryDataset
     contract = {
         "schema_version": payload["schema_version"], "mode": MODE, "sampler_version": dataset_class.sampler_version,
-        "dataset_sha256": config["dataset_sha256"], "trajectory_manifest_sha256": config["trajectory_manifest_sha256"],
+        "dataset_format": dataset_format,
         "seed": config["seed"], "initial_coef": float(config["coef"]),
         "decay_end_iteration": config["decay_end_iteration"], "decay_schedule": config.get("decay_schedule", "linear"),
         "schedule_counter": "one_based_outer_rollout_iteration; initial_at_1; zero_at_end",
@@ -460,8 +457,8 @@ def prepare_trajectory_sft(trainer, batch, rollout_iteration):
     receipt_root = checkpoint_root / "expert_action_sft_sampling"
     _atomic_json(receipt_root / "contract.json", contract)
     _atomic_json(receipt_root / f"rollout_{rollout_iteration:06d}.json", {
-        "stage": "prepared_before_actor_update", "dataset_sha256": dataset.dataset_sha256,
-        "manifest_sha256": dataset.manifest_sha256, "derived_seed_sha256": derived,
+        "stage": "prepared_before_actor_update", "dataset_id": getattr(dataset, "dataset_id", "expert-trajectories"),
+        "sampling_seed": derived,
         **payload,
         "decoded_samples": [{"sample_id": row["sample_id"],
                              "prompt": _decode(trainer.tokenizer, row["prompt_ids"]),

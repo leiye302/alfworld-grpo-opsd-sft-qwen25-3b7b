@@ -1,8 +1,0 @@
-{
-  "purpose": "single-node eight-rank complete-trajectory SFT; no change to W/T normalization or optimizer placement",
-  "path": "framework/verl/trainer/ppo/expert_action_sft/actor.py",
-  "before_sha256": "ef836ad611c50397c537c0593bdc2195e15d32794b42c5365f038513f92640a1",
-  "after_sha256": "2d71022763d199ba4dffbb16a87c381ad9c10c3acaa69d97769199810a5a0ca4",
-  "before": "if not torch.distributed.is_initialized() or torch.distributed.get_world_size() != 4:\n        raise ValueError(\"Expert Action SFT requires exactly four initialized FSDP ranks\")",
-  "after": "if not torch.distributed.is_initialized() or (torch.distributed.get_world_size() != 4 and not (trajectory and torch.distributed.get_world_size() == 8)):\n        raise ValueError(\"Expert SFT requires four ranks, or eight ranks for complete-trajectory SFT\")"
-}

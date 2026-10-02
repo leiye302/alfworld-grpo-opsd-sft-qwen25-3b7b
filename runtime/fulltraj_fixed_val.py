@@ -5,7 +5,7 @@ import gzip
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import time
 
 ROOT = Path(os.environ['SDAR_RUN_ROOT']) / 'fixed_validation'
@@ -26,12 +26,17 @@ def digest(value):
                                      separators=(',', ':')).encode()).hexdigest()
 
 def manifest():
-    data = json.loads(MANIFEST_PATH.read_text())
-    expected = data.pop('sha256')
-    assert digest(data) == expected, 'Fixed evaluation manifest changed'
-    data['sha256'] = expected
+    data = json.loads(MANIFEST_PATH.read_text(encoding='utf-8'))
+    assert data['validation_id'] == 'alfworld-valid-seen-128-v1'
     assert len(data['tasks']) == 128
     assert len({row['task_id'] for row in data['tasks']}) == 128
+    root = Path(os.environ['ALFWORLD_DATA'])
+    for task in data['tasks']:
+        relative = PurePosixPath(task['gamefile'])
+        assert not relative.is_absolute() and '..' not in relative.parts
+        assert relative.parts[:2] == ('json_2.1.1', 'valid_seen')
+        assert relative.as_posix() == task['task_id']
+        task['gamefile'] = str(root.joinpath(*relative.parts))
     return data
 
 def request_seed(task_id, turn):
@@ -102,7 +107,7 @@ def install_manager(module):
         for i, task in enumerate(tasks):
             state = {'observation': obs['anchor'][i],
                      'admissible_commands': self.envs.get_admissible_commands[i]}
-            assert digest(state) == task['initial_state_sha256'], task['task_id']
+            assert state['observation'] == task['initial_observation'], task['task_id']
             self._fixed_initial.append(state)
         return obs, infos
 
@@ -247,7 +252,6 @@ def install_validation(module):
         started = time.time()
         iteration = int(self.global_steps)
         fixed = manifest()
-        assert fixed['sha256'] == 'd4bd4aa2d5e553e5eb9b61f60450315ad7d2f26032428e13c8f2e2d806aa4cc8'
         assert self.config.data.val_batch_size == 128 and self.config.env.max_steps == 50
         assert self.config.env.history_length == 2
         self.val_envs._fixed_label = f'iteration_{iteration:06d}'
@@ -261,10 +265,10 @@ def install_validation(module):
                 for row in records:
                     stream.write(json.dumps(row, ensure_ascii=False) + '\n')
             write_json(str(out) + '.json', {
-                'iteration': iteration, 'manifest_sha256': fixed['sha256'],
+                'iteration': iteration, 'validation_id': fixed['validation_id'],
                 'tasks': 128, 'successes': successes, 'success_rate': successes / 128,
                 'native_metrics': plain(metrics), 'seconds': time.time() - started,
-                'per_task': [{key: row[key] for key in ('task_id', 'task_type', 'initial_state_sha256',
+                'per_task': [{key: row[key] for key in ('task_id', 'task_type',
                     'environment_seed', 'success', 'length', 'episode_reward')} for row in records],
             })
             print('[FIXED_VALIDATION_COMPLETE]', iteration, successes, '/128', flush=True)

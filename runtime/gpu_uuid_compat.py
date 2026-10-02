@@ -9,7 +9,8 @@ def physical_index(uuid):
         result=pynvml.nvmlDeviceGetIndex(pynvml.nvmlDeviceGetHandleByUUID(uuid))
     finally:
         pynvml.nvmlShutdown()
-    assert result in (0,1,2,3),('GPU outside authorized set',uuid,result)
+    allowed = int(os.environ.get('SDAR_ALLOWED_GPU_COUNT', '8'))
+    assert 0 <= result < allowed,('GPU outside allocated set',uuid,result)
     with open(os.environ['SDAR_RUN_ROOT']+'/logs/gpu_identity.jsonl','a') as f:
         f.write(json.dumps({'time':time.time(),'pid':os.getpid(),'uuid':uuid,'physical_index':result,'visible':os.environ.get('CUDA_VISIBLE_DEVICES')})+'\n')
     return result

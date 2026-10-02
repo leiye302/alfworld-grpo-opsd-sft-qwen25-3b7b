@@ -177,8 +177,8 @@ class RetentionChecks(unittest.TestCase):
             self.assertTrue((run/'checkpoints/global_step_100').is_dir())
             self.assertEqual((run/'checkpoints/latest_checkpointed_iteration.txt').read_text(),'100')
 
-    def test_four_profiles_only_change_save_frequency_from_recorded_recipe(self):
-        original=json.loads((ROOT/'configs/recorded_1p5b_launch_args.json').read_text())
+    def test_optional_profiles_preserve_shared_training_defaults(self):
+        original=json.loads((ROOT/'configs/train_defaults.json').read_text(encoding='utf-8'))
         previous={arg.lstrip('+').split('=',1)[0]:arg.split('=',1)[1] for arg in original}
         excluded={'data.train_files','data.val_files','actor_rollout_ref.model.path','trainer.experiment_name',
           'trainer.n_gpus_per_node','ray_init.num_gpus','trainer.total_epochs','trainer.save_freq',
@@ -195,13 +195,13 @@ class RetentionChecks(unittest.TestCase):
                 for key,value in previous.items():
                     if key not in excluded:self.assertEqual(actual[key],value,key)
 
-    def test_default_queue_and_plan_only_launch_two_sft_runs(self):
+    def test_default_queue_and_plan_only_launch_3b_sft(self):
         work=self.run.parent.parent
         output=io.StringIO()
         with patch.object(sys,'argv',['handoff','plan','--work',str(work)]), contextlib.redirect_stdout(output):
             handoff.main()
         plans=[json.loads(line) for line in output.getvalue().splitlines()]
-        self.assertEqual([item['group'] for item in plans],['3b_sft','7b_sft'])
+        self.assertEqual([item['group'] for item in plans],['3b_sft'])
         for item in plans:
             self.assertIn('trainer.total_epochs=150',item['args'])
             self.assertIn('+actor_rollout_ref.actor.expert_action_sft.enabled=true',item['args'])
@@ -210,9 +210,9 @@ class RetentionChecks(unittest.TestCase):
              patch.object(sys,'argv',['handoff','run-all','--work',str(work),'--resume']), \
              patch.object(handoff,'check') as check, patch.object(handoff,'run_one') as launch:
             handoff.main()
-        check.assert_called_once_with(work,True)
+        check.assert_called_once_with(work,True,'3b')
         self.assertEqual([tuple(call.args[1:]) for call in launch.call_args_list],
-                         [('3b','sft',True),('7b','sft',True)])
+                         [('3b','sft',True)])
 
 
 def main():

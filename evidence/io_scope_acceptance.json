@@ -1,7 +1,0 @@
-{
-  "passed": true,
-  "scope_follows_recipient_run_parent": true,
-  "only_own_empty_slots_removed": true,
-  "nonempty_file_preserved": true,
-  "GPU_used": false
-}

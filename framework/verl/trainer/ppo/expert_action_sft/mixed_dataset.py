@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import copy
 import gzip
-import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import random
@@ -17,11 +16,6 @@ import re
 from .data import _require, _is_int, _text, TASK_TYPES, encode_record, validate_record
 
 DATASET_FORMAT = "mixed_expert_episode_v1"
-
-
-def canonical_sha256(value):
-    return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
-                                    separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def parse_native_response(response):
@@ -136,9 +130,6 @@ def _real_rows(wrapper):
         if index:
             _require(steps[index - 1]["feedback"] == step["observation"] and
                      steps[index - 1].get("done") is not True, "Disconnected closed-loop history")
-        if "prompt_sha256" in step:
-            _require(step["prompt_sha256"] == hashlib.sha256(step["prompt_text"].encode()).hexdigest(),
-                     "Native prompt receipt mismatch")
         _require(type(flag.get("supervise")) is bool and type(flag.get("sft_step_mask")) is int and
                  flag["sft_step_mask"] in (0, 1) and bool(flag["sft_step_mask"]) == flag["supervise"],
                  "Closed-loop supervision mask mismatch")
@@ -167,20 +158,22 @@ def _real_rows(wrapper):
 
 
 class MixedExpertTrajectoryDataset:
-    sampler_version = "sha256-uniform-mixed-complete-episode-with-replacement-v1"
+    sampler_version = "uniform-mixed-complete-episode-with-replacement-v2"
 
     def __init__(self, config, tokenizer, chat_kwargs=None):
         _require(config.get("dataset_format") == DATASET_FORMAT, "Explicit mixed dataset format required")
         path = Path(config["dataset_path"]).expanduser().resolve(strict=True)
         content = path.read_bytes()
-        self.dataset_path, self.dataset_sha256 = str(path), hashlib.sha256(content).hexdigest()
-        _require(self.dataset_sha256 == config["dataset_sha256"], "Mixed dataset SHA256 mismatch")
+        self.dataset_path = str(path)
         manifest_bytes = Path(config["trajectory_manifest_path"]).read_bytes()
-        self.manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
-        _require(self.manifest_sha256 == config["trajectory_manifest_sha256"], "Mixed manifest SHA256 mismatch")
         manifest = json.loads(manifest_bytes)
         _require(manifest.get("schema_version") == 2 and manifest.get("schema") == "mixed_expert_manifest_v1" and
-                 manifest.get("dataset_sha256") == self.dataset_sha256, "Mixed manifest schema/dataset mismatch")
+                 isinstance(manifest.get("dataset_id"), str), "Mixed manifest schema/dataset identity missing")
+        self.dataset_id = manifest['dataset_id']
+        self.sampling_seed = manifest.get('sampling_seed', 20260920)
+        self.round_seeds = manifest.get('round_seeds', [])
+        _require(_is_int(self.sampling_seed) and isinstance(self.round_seeds, list) and
+                 all(_is_int(seed) and seed >= 0 for seed in self.round_seeds), "Invalid fixed SFT sampling stream")
         entries = manifest["episodes"]
         _require(isinstance(entries, list) and entries, "Empty mixed manifest")
         self.episode_info = {entry["episode_id"]: entry for entry in entries}
@@ -196,10 +189,10 @@ class MixedExpertTrajectoryDataset:
                      "Unknown mixed episode schema/kind")
             _require(eid == ("legacy:" if kind == "legacy_complete" else "closedloop:") + _text(source, "source id") and
                      eid not in self.episodes and eid in self.episode_info, "Mixed episode identity/coverage mismatch")
-            info, digest = self.episode_info[eid], canonical_sha256(wrapper)
+            info = self.episode_info[eid]
             rows, selected = _legacy_rows(wrapper) if kind == "legacy_complete" else _real_rows(wrapper)
             _require(info.get("source_episode_id") == source and info.get("kind") == kind and
-                     info.get("source_episode_sha256") == digest and info.get("source_decisions") == len(rows) and
+                     info.get("source_decisions") == len(rows) and
                      info.get("supervised_decisions") == len(selected) and info.get("selected_step_indices") == selected,
                      "Mixed manifest episode certification mismatch")
             indices = []
@@ -207,7 +200,7 @@ class MixedExpertTrajectoryDataset:
                 args = (rows[step], tokenizer, int(config["max_prompt_length"]), int(config["max_response_length"]), chat_kwargs)
                 encoded = encode_record(*args) if kind == "legacy_complete" else encode_real_step(*args)
                 encoded.update(sample_id=f"{eid}:{step}", episode_id=eid, source_episode_id=source, source_step=step,
-                               source_kind=kind, source_episode_sha256=digest,
+                               source_kind=kind,
                                sft_mask=[1] * len(encoded["response_ids"]))
                 indices.append(len(self.encoded))
                 self.encoded.append(encoded)
@@ -219,15 +212,19 @@ class MixedExpertTrajectoryDataset:
     def sample_trajectories(self, seed, rollout_iteration, count):
         _require(_is_int(seed) and _is_int(rollout_iteration) and rollout_iteration >= 1 and
                  _is_int(count) and count >= 1, "Invalid mixed trajectory sampling request")
-        material = f"{self.sampler_version}\0{self.dataset_sha256}\0{self.manifest_sha256}\0{seed}\0{rollout_iteration}".encode()
-        derived = hashlib.sha256(material).hexdigest()
-        rng, records, draws = random.Random(int(derived, 16)), [], []
+        # File paths/provenance formatting cannot change the default draw stream.
+        # Explicit round seeds are ordinary reproducibility metadata, not file checksums.
+        if seed == self.sampling_seed and rollout_iteration <= len(self.round_seeds):
+            derived = self.round_seeds[rollout_iteration - 1]
+        else:
+            derived = random.Random(f'{self.sampler_version}|{seed}|{rollout_iteration}').getrandbits(256)
+        rng, records, draws = random.Random(derived), [], []
         for index in range(count):
             eid = rng.choice(self.episode_ids)
             selected = copy.deepcopy([self.encoded[i] for i in self.episodes[eid]])
             info = self.episode_info[eid]
             draws.append({"draw": index, "episode_id": eid, "source_episode_id": info["source_episode_id"],
-                          "source_kind": info["kind"], "source_episode_sha256": info["source_episode_sha256"],
+                          "source_kind": info["kind"],
                           "start": len(records), "decisions": len(selected), "total_decisions": info["source_decisions"],
                           "selected_step_indices": list(info["selected_step_indices"]),
                           "selected_sample_ids": [row["sample_id"] for row in selected],

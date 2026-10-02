@@ -1,0 +1,147 @@
+{
+  "passed": true,
+  "reviewed_at": "2026-10-02T02:00:07.454059+00:00",
+  "default_experiment": "3b_sft",
+  "hardware": "single-node 8 x A100 40GB",
+  "data": {
+    "expert_trajectories": 409,
+    "legacy_trajectories": 353,
+    "real_closedloop_trajectories": 56,
+    "supervised_decisions": 2274,
+    "supervised_tokens": 239763,
+    "fixed_validation_tasks": 128,
+    "paths_relative": true,
+    "historical_file_sha_required": false
+  },
+  "checks": {
+    "public_project_regressions": {
+      "passed": true,
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "expert_trajectories": 409,
+      "fixed_validation_tasks": 128,
+      "gpu_training_tested": false,
+      "real_tokenizer_tested_here": false
+    },
+    "checkpoint_retention": {
+      "passed": true,
+      "tests": 9,
+      "skipped": 0
+    },
+    "tokenizers_and_environment": {
+      "3b": {
+        "trajectories": 409,
+        "supervised_decisions": 2274,
+        "supervised_tokens": 239763,
+        "cases": [
+          {
+            "iteration": 1,
+            "coefficient": 0.1,
+            "trajectory_draws": 16,
+            "decisions": 103,
+            "tokens": 11026
+          },
+          {
+            "iteration": 25,
+            "coefficient": 0.05160257887858277,
+            "trajectory_draws": 16,
+            "decisions": 85,
+            "tokens": 9442
+          },
+          {
+            "iteration": 49,
+            "coefficient": 0.00010273036248318324,
+            "trajectory_draws": 16,
+            "decisions": 85,
+            "tokens": 9051
+          }
+        ]
+      },
+      "7b_optional": {
+        "trajectories": 409,
+        "supervised_decisions": 2274,
+        "supervised_tokens": 239763,
+        "cases": [
+          {
+            "iteration": 1,
+            "coefficient": 0.1,
+            "trajectory_draws": 16,
+            "decisions": 103,
+            "tokens": 11026
+          },
+          {
+            "iteration": 25,
+            "coefficient": 0.05160257887858277,
+            "trajectory_draws": 16,
+            "decisions": 85,
+            "tokens": 9442
+          },
+          {
+            "iteration": 49,
+            "coefficient": 0.00010273036248318324,
+            "trajectory_draws": 16,
+            "decisions": 85,
+            "tokens": 9051
+          }
+        ]
+      },
+      "initial_states_verified_each": 128,
+      "training_parquet_rows": 16
+    },
+    "eight_rank_cpu_gradient": {
+      "passed": true,
+      "ranks": 8,
+      "optimizer_updates": 2,
+      "cases": [
+        {
+          "iteration": 1,
+          "coefficient": 0.1,
+          "weight": 0.2976838095238095,
+          "global_tokens": 21
+        },
+        {
+          "iteration": 2,
+          "coefficient": 0.09989726963751683,
+          "weight": 0.29537781549759756,
+          "global_tokens": 21
+        }
+      ],
+      "actual_auxiliary_guard_and_backward_exercised": true,
+      "GPU_FSDP_tested": false
+    },
+    "training_contract_preservation": {
+      "passed": true,
+      "baseline_recipe_preserved": true,
+      "expert_inputs_outputs_histories_and_masks_unchanged": true,
+      "expert_episodes": 409,
+      "default_sft_rounds_with_identical_16_trajectory_draws": 49,
+      "fixed_validation_task_order_seeds_observations_unchanged": true,
+      "fixed_validation_tasks": 128,
+      "unchanged_native_training_files": [
+        "framework/verl/workers/actor/dp_actor.py",
+        "framework/verl/trainer/ppo/ray_trainer.py",
+        "framework/verl/trainer/ppo/core_algos.py",
+        "framework/verl/trainer/ppo/expert_action_sft/schedule.py"
+      ],
+      "unchanged_sft_backward_functions": [
+        "build_microbatch",
+        "prepare_auxiliary",
+        "backward_auxiliary"
+      ],
+      "public_dataset_has_no_historical_sha_requirement": true,
+      "gpu_training_tested": false
+    },
+    "shell_syntax": true,
+    "only_selected_model_downloaded": true,
+    "resume_without_checkpoint_rejected": true,
+    "uuid_device_order_0_to_7_supported": true,
+    "mismatched_validation_export_rejected": true,
+    "current_source_paths_and_private_key_patterns_clear": true
+  },
+  "limitations": {
+    "gpu_training_tested": false,
+    "fresh_full_environment_install_tested_this_review": false,
+    "cpu_tests_do_not_prove_a100_kernel_memory_or_throughput": true
+  }
+}

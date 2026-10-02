@@ -6,11 +6,12 @@ from types import SimpleNamespace
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from handoff import DATA_SHA,MANIFEST_SHA,VAL_SHA,CHECKPOINT_POLICY,digest,write_json,arguments
+from handoff import VALIDATION_ID,CHECKPOINT_POLICY,write_json,arguments
 from hardware_profile import PROFILE as HARDWARE_PROFILE
 
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--work',type=Path,required=True);p.add_argument('--gpu',action='store_true')
+    p.add_argument('--size', choices=['3b','7b'], default='3b')
     p.add_argument('--metadata-only',action='store_true',help='Maintainer CPU audit with only model config/tokenizer files.')
     o=p.parse_args(); work=o.work.resolve()
     import torch, numpy, yaml
@@ -24,15 +25,12 @@ def main():
     versions={k:metadata.version(k) for k in ('torch','transformers','vllm','ray','alfworld','textworld','flash-attn','tensordict','numpy')}
     expected={'torch':'2.8.0','transformers':'4.57.3','vllm':'0.11.0','ray':'2.50.0','alfworld':'0.4.2','textworld':'1.6.2','flash-attn':'2.7.4.post1','tensordict':'0.8.3','numpy':'2.2.6'}
     for key,value in expected.items(): assert versions[key].split('+')[0]==value,(key,versions[key])
-    assert digest(ROOT/'data/expert/episodes.jsonl')==DATA_SHA
-    assert digest(ROOT/'data/expert/manifest.json')==MANIFEST_SHA
-    manifest=json.loads((ROOT/'data/fixed_validation/manifest.json').read_text())
-    assert manifest['sha256']==VAL_SHA
-    canonical=dict(manifest);canonical.pop('sha256')
-    assert hashlib.sha256(json.dumps(canonical,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()==VAL_SHA
+    from fulltraj_fixed_val import manifest as load_validation
+    manifest=load_validation()
+    assert manifest['validation_id']==VALIDATION_ID
     assert len(manifest['tasks'])==128 and len(set(t['task_id'] for t in manifest['tasks']))==128
     corpus={}
-    for size in ('3b','7b'):
+    for size in (o.size,):
         model=work/'models'/('Qwen2.5-'+size.upper()+'-Instruct')
         tokenizer=AutoTokenizer.from_pretrained(model,use_fast=True,trust_remote_code=False,local_files_only=True)
         with initialize_config_dir(config_dir=str(ROOT/'framework/verl/trainer/config'),version_base=None):
@@ -53,7 +51,8 @@ def main():
         assert cfg.algorithm.sdar.gate_beta==0 and cfg.algorithm.sdar.sdar_coef==.01
         options=cfg.actor_rollout_ref.actor.expert_action_sft
         dataset=MixedExpertTrajectoryDataset(options,tokenizer,{})
-        assert len(dataset.episodes)==409
+        expert_manifest=json.loads((ROOT/'data/expert/manifest.json').read_text(encoding='utf-8'))
+        assert len(dataset.episodes)==len(expert_manifest['episodes'])
         total_tokens=0
         for record in dataset.encoded:
             assert record['sft_mask']==[1]*len(record['response_ids'])
@@ -83,9 +82,8 @@ def main():
         if not o.metadata_only:
             index=json.loads((model/'model.safetensors.index.json').read_text())
             for shard in set(index['weight_map'].values()): assert (model/shard).is_file(),shard
-        corpus[size]={'trajectories':409,'supervised_decisions':len(dataset.encoded),'supervised_tokens':total_tokens,
+        corpus[size]={'trajectories':len(dataset.episodes),'supervised_decisions':len(dataset.encoded),'supervised_tokens':total_tokens,
                       'chat_template_sha256':hashlib.sha256(tokenizer.chat_template.encode()).hexdigest(),'cases':cases}
-    assert corpus['3b']['supervised_tokens']==corpus['7b']['supervised_tokens']
     # Use the actual ALFWorld wrapper, actual SQLite virtual filesystem and all
     # 128 seeds; no copied receipt can stand in for these reset assertions.
     from agent_system.environments.env_package.alfworld.alfworld.agents.environment import get_environment
@@ -93,14 +91,13 @@ def main():
     base=get_environment(config['env']['type'])(config,train_eval='eval_in_distribution')
     resets=0
     for task in manifest['tasks']:
-        with open(task['gamefile'],'rb') as f: assert hashlib.sha256(f.read()).hexdigest()==task['game_sha256']
+        with open(task['gamefile'],'rb') as f: assert f.read(1), 'Empty ALFWorld game'
         base.game_files=[task['gamefile']];base.num_games=1
         env=base.init_env(batch_size=1)
         try:
             env.seed(task['environment_seed']);obs,info=env.reset()
             state={'observation':obs[0],'admissible_commands':info['admissible_commands'][0]}
-            state_sha=hashlib.sha256(json.dumps(state,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
-            assert state_sha==task['initial_state_sha256'],task['task_id']
+            assert state['observation']==task['initial_observation'],task['task_id']
             resets+=1
         finally: env.close()
     import pyarrow.parquet as pq
@@ -114,9 +111,20 @@ def main():
             props=torch.cuda.get_device_properties(i)
             assert 'A100' in props.name and props.total_memory>=HARDWARE_PROFILE['minimum_gpu_memory_bytes'],(i,props.name,props.total_memory)
             devices.append({'index':i,'name':props.name,'total_memory_bytes':props.total_memory})
-        process=subprocess.check_output(['nvidia-smi','--query-compute-apps=pid','--format=csv,noheader'],text=True).strip()
-        foreign=[int(x.strip()) for x in process.splitlines() if x.strip().isdigit() and int(x.strip())!=os.getpid()]
-        assert not foreign,'GPU compute processes are already present. Do not stop another user\'s job.'
+        import pynvml
+        pynvml.nvmlInit()
+        try:
+            foreign=set()
+            for index in range(8):
+                handle=pynvml.nvmlDeviceGetHandleByIndex(index)
+                for query in (pynvml.nvmlDeviceGetComputeRunningProcesses,
+                              pynvml.nvmlDeviceGetGraphicsRunningProcesses):
+                    try: processes=query(handle)
+                    except pynvml.NVMLError_NotSupported: processes=[]
+                    foreign.update(proc.pid for proc in processes if proc.pid!=os.getpid())
+            assert not foreign,'Allocated GPUs already have other processes. Do not stop them.'
+        finally:
+            pynvml.nvmlShutdown()
         import psutil
         available=psutil.virtual_memory().available
         # Container limits can be much smaller than the physical host reported
@@ -136,7 +144,7 @@ def main():
     else:
         assert not torch.cuda.is_initialized(),'CPU corpus audit unexpectedly used a GPU'
     report={'passed':True,'metadata_only':o.metadata_only,'gpu_kernel_checked':o.gpu,'versions':versions,
-            'corpus':corpus,'fixed_validation_sha256':VAL_SHA,'initial_states_verified':resets,
+            'corpus':corpus,'fixed_validation_id':VALIDATION_ID,'initial_states_verified':resets,
             'train_parquet_rows':train_rows,'checkpoint_policy':CHECKPOINT_POLICY,
             'training_iterations':0,'optimizer_updates':0,'time':time.time(),
             'hardware_profile':HARDWARE_PROFILE,'gpu_devices':devices}

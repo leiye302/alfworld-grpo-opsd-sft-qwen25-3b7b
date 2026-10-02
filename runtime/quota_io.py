@@ -12,7 +12,8 @@ from pathlib import Path
 import threading
 import time
 
-BASE = os.environ.get('SDAR_QUOTA_BASE', '/mnt/zixuan/test/VLA_test')
+BASE = str(Path(os.environ.get('SDAR_QUOTA_BASE',
+           Path(os.environ.get('SDAR_RUN_ROOT', __file__)).resolve().parent)).resolve())
 _local = threading.local()
 _installed = False
 # Shared quota accounting can lag unlinks. Only failed filesystem operations
